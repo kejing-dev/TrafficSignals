@@ -74,6 +74,47 @@ internal object Street {
         return Bezier(p0, k, p2)
     }
 
+    /** The ghost car shows up only once its centre is this far from your eye (body gap >= 2.5 m): never in your seat. */
+    const val GHOST_MIN_D = 5.7f
+
+    /** design scene.yourRoute: your route arrow starts 3 m before the junction centre. */
+    const val ROUTE_START_D = 3f
+
+    /** Wait answer: the ghost rolls from the crosswalk into the left-turn waiting box (front line 4.0 m, mouth 8.7 m). */
+    const val GHOST_WAIT_FROM = 7.6f
+    const val GHOST_WAIT_AT = 6.4f
+
+    /** The visible stretch [t0, t1] of a ghost [path]; `at(u)` / `tangent(u)` take u = 0..1 over that stretch. */
+    data class GhostRun(val path: Bezier, val t0: Float, val t1: Float) {
+        fun at(u: Float): Vec3 = path.at(t0 + (t1 - t0) * u)
+
+        fun tangent(u: Float): Vec3 = path.tangent(t0 + (t1 - t0) * u)
+    }
+
+    /**
+     * Your ghost car (QA q1-1, profile D14 / D20): the real path of your move from the stop line, but it appears only
+     * where its centre is [GHOST_MIN_D] from your [eye] (intersection space, horizontal), so it is never in your seat,
+     * never between your eyes and the panels at 0.95 m, and a right turn still bends round the near corner.
+     * [wait] = roll straight into the left-turn waiting box and stay there.
+     */
+    fun ghostRun(laneX: Float, m: Move, wait: Boolean, eye: Vec3): GhostRun {
+        if (wait) {
+            val p0 = entry(Compass.SOUTH, laneX, GHOST_WAIT_FROM)
+            val p2 = entry(Compass.SOUTH, laneX, GHOST_WAIT_AT)
+            return GhostRun(Bezier(p0, (p0 + p2) * 0.5f, p2), 0f, 1f)
+        }
+        val p = path(Compass.SOUTH, laneX, m)
+        // design scene.yourRoute: the ghost drives out along the route arrow, which starts 3 m before the junction
+        // centre (the part of the junction P2 does not cover); never earlier than GHOST_MIN_D from your eye
+        var t0 = p.nearest(Vec3(laneX, 0f, ROUTE_START_D))
+        while (t0 < 0.9f) {
+            val c = p.at(t0)
+            if (kotlin.math.hypot(c.x - eye.x, c.z - eye.z) >= GHOST_MIN_D) break
+            t0 += 0.005f
+        }
+        return GhostRun(p, t0, 1f)
+    }
+
     private fun cornerPoint(p0: Vec3, h: Vec3, p2: Vec3): Vec3 =
         // the two lines are perpendicular: keep p0's cross coordinate and take p2's along the heading
         if (abs(h.z) > 0.5f) Vec3(p0.x, 0f, p2.z) else Vec3(p2.x, 0f, p0.z)

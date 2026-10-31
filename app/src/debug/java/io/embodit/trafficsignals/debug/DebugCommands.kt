@@ -6,6 +6,7 @@ import io.embodit.trafficsignals.domain.Gesture
 import io.embodit.trafficsignals.domain.Lane
 import io.embodit.trafficsignals.domain.Question
 import io.embodit.trafficsignals.platform.TsLog
+import io.embodit.trafficsignals.ui.Dialog
 import io.embodit.trafficsignals.ui.Phase
 import io.embodit.trafficsignals.ui.Screen
 import io.embodit.trafficsignals.ui.TsController
@@ -28,6 +29,8 @@ import io.embodit.trafficsignals.ui.debug.Probe
  *   result <a>/<b>                       a fake result page (S10)
  *   seedMistakes <n> | clear             n fake mistakes (S11 with content) / empty the mistakes book
  *   dialog leave|exit|reset|close        the self-built dialogs (S12 ...)
+ *   dialog confirm|cancel                press the open dialog's right / left button (confirm on exit = TsEvent.Exit, the app quits)
+ *   quit                                 settings -> [Quit app] -> [Quit]: the full D26 exit path
  *   block                                the "can't open" dialog (S13)
  *   lang zh|en | sound on|off | big on|off | slow on|off
  *   panels 0|1 | cam front|side          hide every panel / officer turned 90° (frame-check side view)
@@ -92,8 +95,17 @@ object DebugCommands {
                     "leave" -> ev(TsEvent.AskLeave)
                     "exit" -> ev(TsEvent.AskExit)
                     "reset" -> ev(TsEvent.AskReset)
+                    // q1-7: press the dialog's buttons with the same events the panel sends
+                    "confirm" -> return confirm()
+                    "cancel" -> ev(TsEvent.CloseDialog)
                     else -> ev(TsEvent.CloseDialog)
                 }
+            // q1-7: the whole D26 path in one go, like a user: settings -> [Quit app] -> [Quit]
+            "quit" -> {
+                ev(TsEvent.OpenSettings)
+                ev(TsEvent.AskExit)
+                return confirm()
+            }
             "block" -> c.debugBlocked()
             "lang" -> ev(TsEvent.Lang(args.firstOrNull() != "en"))
             "sound" -> ev(TsEvent.SoundOn(on(args.firstOrNull())))
@@ -111,6 +123,22 @@ object DebugCommands {
             else -> return "unknown"
         }
         return "ok state=${c.designState()}"
+    }
+
+    /** The right-hand button of the open dialog: [Quit] (exit / blocked), [Reset], or [Leave] for the leave dialog. */
+    private fun confirm(): String {
+        val st = c.state.value
+        val e =
+            when {
+                st.screen == Screen.BLOCKED -> TsEvent.Exit
+                st.dialog == Dialog.EXIT -> TsEvent.Exit
+                st.dialog == Dialog.RESET -> TsEvent.ResetProgress
+                st.dialog == Dialog.LEAVE -> TsEvent.Leave
+                else -> return "no dialog open state=${c.designState()}"
+            }
+        TsLog.i("CMD confirm -> $e")
+        ev(e)
+        return "ok confirmed=$e state=${c.designState()}"
     }
 
     private fun goState(id: String) {

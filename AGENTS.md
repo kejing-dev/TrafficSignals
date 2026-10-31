@@ -88,12 +88,24 @@ or `tools/dev.sh cmd 'NAME ARGS'`. Each answers `CMD NAME -> ok state=<design id
 | `answer go/stop/wait/slow/lane/pull`, `hint`, `replay`, `next`, `switchLane`, `breakdown`, `home`, `back` | panel buttons |
 | `timeout` | L6 time-out now (S14) |
 | `result 8/10`, `seedMistakes 6`, `dialog leave/exit/reset/close`, `block` | S10, S11 with rows, DLG, S13 |
+| `dialog confirm` / `dialog cancel` | press the open dialog's right / left button with the panel's own event: on the exit dialog (or S13) `confirm` = `TsEvent.Exit`, the app calls `finishAndRemoveTask()` and ends its process; reset -> ResetProgress; leave -> Leave |
+| `quit` | the whole D26 path: settings -> [Quit app] -> [Quit] (`EXIT confirmed` in the log, then the process is gone) |
 | `lang zh/en`, `sound on/off`, `big on/off`, `slow on/off` | settings |
 | `panels 0/1`, `cam front/side` | hide every panel / officer turned 90° |
 | `stick X` / `stick off` | fake thumbstick X (I8) |
 | `yaw DEG` / `yaw off`, `recenter` | fake head yaw, re-place (I10) |
 | `background`, `resume` | S18 and back |
 | `name LABEL` / `name clear`, `dump` | name override, scene + instance dump (`DUMP` lines) |
+
+Other log lines QA can grep: `GHOST from=… t0=… dEye=…` (your ghost car's first visible point and its distance from the
+eye, always >= 5.7 m), `OVERFLOW name=… text=…` (a fixed-line text that does not fit: must never appear), `PALETTE …`
+(the live theme colours; the vibrant grey roles print as #FF000000, see tools/contrast.py).
+
+## Contrast gate (build prompt, before every QA hand-off)
+
+`python3 tools/contrast.py <shots dir>` (python3 without -I, needs Pillow) prints the table of every text colour x
+background pair: fixed colours exactly, the SpatialUI vibrant roles measured on the tour screenshots (boxes in
+`tools/contrast_samples.py`, re-pick them when a layout moves). Exit 1 if any pair is < 4.5:1 (graphics < 3:1).
 
 ## Screenshot list (QA)
 
@@ -106,6 +118,8 @@ or `tools/dev.sh cmd 'NAME ARGS'`. Each answers `CMD NAME -> ok state=<design id
 | S4 frame check | `panels 0`, `lesson G step K`, `cam front` / `cam side` (43 × 2; the Blender frame check covers the same poses) |
 | S5 / S6 | `level 4` / `start` |
 | S7 / S8 | `q straight,EAST,STRAIGHT` + `answer go` / `answer stop`; wait 1.5 s |
+| ghost car (q1-1) | `q straight,EAST,STRAIGHT` / `q right,EAST,RIGHT` / `q left,WEST,LEFT` + `answer go`, `q leftWait,WEST,LEFT` + `answer wait`; shoot at once and again after 1.5 s |
+| D26 exit | `state SET`, `dialog exit` (shot), `dialog confirm`; then `adb shell dumpsys activity recents` has no io.embodit.trafficsignals and `pidof` is empty; relaunch -> S1 / S2 |
 | S9 | from S7 `switchLane` |
 | L3 wait box | `q leftWait,WEST,LEFT` + `answer wait` |
 | S10 / S12 / S13 / S14 | `result 8/10` / `dialog leave` / `block` / `state S14` |

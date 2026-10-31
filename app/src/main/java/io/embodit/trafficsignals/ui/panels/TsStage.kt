@@ -4,6 +4,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import com.pico.spatial.ui.design.PicoTheme
+import io.embodit.trafficsignals.ui.theme.TsColors
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
@@ -24,6 +29,20 @@ import io.embodit.trafficsignals.ui.scene.TrafficScene
 @Composable
 internal fun TsStage(state: TsUiState, scene: TrafficScene, onEvent: (TsEvent) -> Unit) {
     val bindTick = scene.bindTick.intValue
+    // the live theme colours, one `PALETTE role=#AARRGGBB` line each: tools/contrast.py reads them for the D13 table
+    val cs = PicoTheme.colorScheme
+    LaunchedEffect(cs) {
+        fun hex(c: Color) = String.format(java.util.Locale.US, "#%08X", c.toArgb())
+        val roles =
+            listOf(
+                "labelPrimary" to cs.labelPrimary, "labelSecondary" to cs.labelSecondary, "labelTertiary" to cs.labelTertiary,
+                "labelQuaternary" to cs.labelQuaternary, "labelPrimaryLight" to cs.labelPrimaryLight,
+                "fillPrimary" to cs.fillPrimary, "fillSecondary" to cs.fillSecondary, "fillTertiary" to cs.fillTertiary, "fillLight" to cs.fillLight,
+                "dividerLine" to cs.dividerLine, "interaction" to cs.interaction, "passable" to cs.passable, "alert" to cs.alert, "error" to cs.error,
+                "ink" to TsColors.Ink,
+            )
+        TsLog.i("PALETTE " + roles.joinToString(" ") { (n, c) -> "$n=${hex(c)}" })
+    }
     SpatialView(
         modifier = Modifier.fillMaxSize(),
         attachments = {

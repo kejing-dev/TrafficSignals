@@ -330,9 +330,9 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
         driver.addChild(aids)
         aids.enabled = false
         aidsRoot = aids
-        val wordMesh = withContext(Dispatchers.IO) { sh.keep(uprightQuad(2.0f, 0.7f, "aidWord")) }
+        val wordMesh = withContext(Dispatchers.IO) { sh.keep(uprightQuad(2.0f, WORD_H, "aidWord")) }
         repeat(4) { aidWords += model(wordMesh, m.newTextMaterial(), "aidWord$it", aids) }
-        val tagMesh = withContext(Dispatchers.IO) { sh.keep(uprightQuad(1.1f, 0.34f, "armTag")) }
+        val tagMesh = withContext(Dispatchers.IO) { sh.keep(uprightQuad(1.1f, ARM_TAG_H, "armTag")) }
         repeat(2) { armTags += model(tagMesh, m.newTextMaterial(), "armTag$it", driver).also { e -> e.enabled = false } }
         built = true
         TsLog.i("SCENE built ms=${SystemClock.elapsedRealtime() - t0}")
@@ -490,7 +490,7 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
         val lane = state.lane
         val v = Judge.verdict(q.copy(lane = lane))
         val myPath = Street.path(Compass.SOUTH, lane.x, Judge.yourMove(lane))
-        val tStart = myPath.nearest(Vec3(lane.x, 0f, 3f))
+        val tStart = myPath.nearest(Vec3(lane.x, 0f, Street.ROUTE_START_D))
         if (!judged) {
             // watching: your route in interaction blue, nothing else
             val b = MeshBuilder()
@@ -584,9 +584,19 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
             }
             val g = ghost
             if (g != null) {
-                g.enabled = answer == Answer.GO || answer == Answer.WAIT
-                ghostPath = Street.path(Compass.SOUTH, lane.x, Judge.yourMove(lane), Street.STOP + 2.3f)
-                ghostStop = if (answer == Answer.WAIT) WAIT_T else 1f
+                // q1-1: the ghost starts at the junction mouth (tail 4.7 m ahead of your eye), never inside your own car,
+                // and fades in, so it can never fill your view or sit between your eyes and P2 / P3 (profile D14 / D20)
+                val show = answer == Answer.GO || answer == Answer.WAIT
+                val eyeI = Vec3(lane.x - EYE_LEFT_OF_LANE, 0f, EYE_TO_CENTRE)
+                val gp = Street.ghostRun(lane.x, Judge.yourMove(lane), answer == Answer.WAIT, eyeI)
+                ghostPath = gp
+                m.ghost.setOpacity(0f)
+                g.setLocal(position = gp.at(0f), rotation = Quat4.axisAngle(Vec3.UP, Yaw.of(gp.tangent(0f))))
+                g.enabled = show
+                if (show) {
+                    val c0 = gp.at(0f)
+                    TsLog.i(String.format(Locale.US, "GHOST from=%s to=%s t0=%.3f dEye=%.2f", TsLog.pos(c0), TsLog.pos(gp.at(1f)), gp.t0, kotlin.math.hypot(c0.x - eyeI.x, c0.z - eyeI.z)))
+                }
             }
             TsLog.i("FLOW q=${q.key} lane=$lane answer=$answer release=${rel?.approach}:${rel?.moves} stopped=${Judge.stopped(q.gesture, q.facing)}")
     
@@ -605,8 +615,7 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
             }
     }
 
-    private var ghostPath: Street.Bezier? = null
-    private var ghostStop = 1f
+    private var ghostPath: Street.GhostRun? = null
 
     private fun stepFlows(now: Long) {
         val m = mats ?: return
@@ -637,7 +646,8 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
         val g = ghost ?: return
         val gp = ghostPath ?: return
         if (g.enabled) {
-            val tt = eased * ghostStop
+            m.ghost.setOpacity(GHOST_OPACITY * t)
+            val tt = eased
             g.setLocal(position = gp.at(tt), rotation = Quat4.axisAngle(Vec3.UP, Yaw.of(gp.tangent(tt))))
         }
     }
@@ -675,12 +685,44 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
         val near = ui.screen == Screen.LESSON
         val r = if (near) 1.25f else 2.2f
         val ks = if (near) 0.42f else 1f
-        for (i in 0 until 4) {
-            val local = dirs[i] * r + Vec3(0f, if (near) 0.2f else 0.45f, 0f)
-            val world = Vec3(officerPos.x, 0f, officerPos.z) + local
-            aidWords[i].setLocal(position = local, rotation = Upright.panelRotation(world, eye), scale = Vec3(ks, ks, ks))
-        }
         val k = if (ui.big) 1.5f else 1f
+        // q1-5: boards tier by depth as seen from your seat, so none hides him or another board. The board on your side of
+        // him stands low, its top under your sight line to his feet; the board behind him floats above his head and above
+        // the hand tags; the two side boards stay at the middle height, left and right of him.
+        val feet = officerPos.y
+        val toHim = Vec3(officerPos.x, 0f, officerPos.z).let { Vec3(it.x - eye.x, 0f, it.z - eye.z) }
+        val dHim = toHim.length.coerceAtLeast(1f)
+        val view = toHim * (1f / dHim)
+        for (i in 0 until 4) {
+            val depth = dirs[i].x * view.x + dirs[i].z * view.z
+            // at the crossroads post the board on your side of him stands twice as far out, on the road in front of the
+            // post; on the lesson post (6 m) it stays close, or your bonnet would hide it
+            val flat = dirs[i] * (if (depth < -0.7f && !near) 2f * r else r)
+            val world = Vec3(officerPos.x + flat.x, 0f, officerPos.z + flat.z)
+            val dBoard = Vec3(world.x - eye.x, 0f, world.z - eye.z).length
+            var kb = ks
+            val y: Float
+            when {
+                depth < -0.7f -> {
+                    // in front of him (towards you): its top stays under your sight line to the foot of his post, so it
+                    // covers neither him nor the post (lesson post: under the line to his feet, so never his legs)
+                    val topMax = if (near) eye.y + (feet - eye.y) * (dBoard / dHim) - 0.05f else eye.y * (1f - dBoard / dHim) - 0.03f
+                    kb = minOf(ks, (topMax - 0.02f) / WORD_H).coerceAtLeast(0.25f * ks)
+                    y = 0.02f + WORD_H * kb / 2
+                }
+                depth > 0.7f -> {
+                    // behind him: bottom above his head and above the top of the higher hand tag as seen from your eye
+                    val tagTop = feet + 2.0f * k + ARM_TAG_H * (if (near) 0.6f else 1f) / 2 + 0.05f
+                    val head = feet + OFFICER_H * k + 0.1f
+                    val clear = maxOf(head, tagTop)
+                    val bottom = eye.y + (clear - eye.y) * (dBoard / dHim) + 0.08f
+                    y = bottom + WORD_H * kb / 2
+                }
+                else -> y = if (near) 0.2f else 0.45f
+            }
+            val local = Vec3(flat.x, y, flat.z)
+            aidWords[i].setLocal(position = local, rotation = Upright.panelRotation(world + Vec3(0f, y, 0f), eye), scale = Vec3(kb, kb, kb))
+        }
         // the two hand tags at different heights so they never cover each other when he stands side-on
         val kt = if (near) 0.6f else 1f
         val leftHand = officerPos + l * (0.75f * k) + Vec3(0f, 1.55f * k, 0f)
@@ -1064,7 +1106,7 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
         val flowStop: UnlitMaterial = sheer(UiColors.ERROR, 0.9f)
         val route: UnlitMaterial = sheer(UiColors.INTERACTION, 0.55f)
         val routeMark: UnlitMaterial = sheer(UiColors.ALERT, 0.9f)
-        val ghost: UnlitMaterial = sheer(UiColors.PASSABLE, 0.35f)
+        val ghost: UnlitMaterial = sheer(UiColors.PASSABLE, GHOST_OPACITY)
         private val textures = ArrayList<TextureResource>()
 
         private fun unlit(tex: TextureResource): UnlitMaterial =
@@ -1140,6 +1182,11 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
         const val LIFT = 0.025f
         const val LIFT2 = 0.035f
         const val WAIT_T = 0.42f
+        const val GHOST_OPACITY = 0.35f
+        const val WORD_H = 0.7f
+        const val ARM_TAG_H = 0.34f
+        const val OFFICER_H = 1.75f
+        const val GHOST_HALF_LEN = 2.3f
         const val DRIVE_MS = 3000L
         const val FADE_S = 0.25f
         const val TURN_S = 0.5f

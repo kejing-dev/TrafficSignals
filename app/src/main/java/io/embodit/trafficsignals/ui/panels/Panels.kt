@@ -37,10 +37,12 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.pico.spatial.ui.design.Button
 import com.pico.spatial.ui.design.ButtonDefaults
 import com.pico.spatial.ui.design.CircularProgressDefaults
@@ -67,6 +69,7 @@ import io.embodit.trafficsignals.domain.Judge
 import io.embodit.trafficsignals.domain.Lane
 import io.embodit.trafficsignals.domain.Levels
 import io.embodit.trafficsignals.domain.Tr
+import io.embodit.trafficsignals.platform.TsLog
 import io.embodit.trafficsignals.ui.Dialog
 import io.embodit.trafficsignals.ui.Phase
 import io.embodit.trafficsignals.ui.Screen
@@ -97,6 +100,11 @@ private fun Glass(w: Float, h: Float, dim: Boolean = false, padding: Dp = 24.dp,
 // small pieces
 // =============================================================================================
 
+/** Logs `OVERFLOW name=... text=...` when a single / fixed-line text does not fit (profile D16, QA q1-2 regression guard). */
+private fun fits(name: String, text: String): (TextLayoutResult) -> Unit = { r ->
+    if (r.hasVisualOverflow) TsLog.w("OVERFLOW name=$name text=\"$text\" lines=${r.lineCount} w=${r.size.width}")
+}
+
 @Composable
 private fun Key(
     text: String,
@@ -107,15 +115,18 @@ private fun Key(
     height: Dp = 48.dp,
     enabled: Boolean = true,
     outline: Color? = null,
+    large: Boolean = false,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
-    val container = if (primary) PicoTheme.colorScheme.interaction else PicoTheme.colorScheme.fillTertiary
-    val ink = when {
-        primary -> TsColors.Ink
+    // q1-3 (profile D13): a danger key is the error colour as the FILL with dark ink on it (6.7:1), never red text on
+    // the grey fill (1.27:1 measured by QA); primary = interaction fill + dark ink
+    val container = when {
+        primary -> TsColors.InteractionFill
         danger -> PicoTheme.colorScheme.error
-        else -> PicoTheme.colorScheme.labelPrimary
+        else -> PicoTheme.colorScheme.fillTertiary
     }
+    val ink = if (primary || danger) TsColors.Ink else PicoTheme.colorScheme.labelPrimary
     val border = if (outline != null) Modifier.border(3.dp, outline, CircleShape) else Modifier
     Box(modifier = modifier.then(border).padding(if (outline != null) 3.dp else 0.dp)) {
         Button(
@@ -130,7 +141,8 @@ private fun Key(
                 Icon(painter = painterResource(icon), contentDescription = null, modifier = Modifier.size(22.dp), tint = ink)
                 Spacer(Modifier.width(8.dp))
             }
-            Text(text = text, maxLines = 1, color = ink, style = TsType.title)
+            // [large] = 20 sp: the dialog keys; thin 18 sp CJK strokes of 退出 measured only 4.2:1 on the 2160 px capture (D13)
+            Text(text = text, maxLines = 1, color = ink, style = if (large) TsType.title.copy(fontSize = 20.sp, lineHeight = 26.sp) else TsType.title, onTextLayout = fits(name, text))
         }
     }
 }
@@ -138,7 +150,7 @@ private fun Key(
 @Composable
 private fun Chip(text: String, color: Color = PicoTheme.colorScheme.fillSecondary, ink: Color = PicoTheme.colorScheme.labelPrimary) {
     Box(modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(color).padding(horizontal = 12.dp, vertical = 6.dp)) {
-        Text(text = text, style = TsType.label, color = ink, maxLines = 1)
+        Text(text = text, style = TsType.label, color = ink, maxLines = 1, onTextLayout = fits("chip", text))
     }
 }
 
@@ -147,7 +159,7 @@ private fun segColors() =
     SegmentControlDefaults.colors(
         itemBackgroundColor = Color.Transparent,
         itemContentColor = PicoTheme.colorScheme.labelPrimary,
-        selectedItemBackgroundColor = PicoTheme.colorScheme.interaction,
+        selectedItemBackgroundColor = TsColors.InteractionFill,
         selectedItemContentColor = TsColors.Ink,
     )
 
@@ -161,7 +173,7 @@ private fun Seg(items: List<Pair<String, Boolean>>, name: String, itemW: Dp, onP
                 modifier = Modifier.width(itemW).fillMaxHeight().probe("${name}_$i"),
                 textStyle = TsType.label,
                 colors = segColors(),
-                title = { Text(text = label, maxLines = 1, color = if (selected) TsColors.Ink else PicoTheme.colorScheme.labelPrimary, style = TsType.label) },
+                title = { Text(text = label, maxLines = 1, color = if (selected) TsColors.Ink else PicoTheme.colorScheme.labelPrimary, style = TsType.label, onTextLayout = fits("${name}_$i", label)) },
             )
         }
     }
@@ -176,7 +188,7 @@ private fun SoundKey(state: TsUiState, onEvent: (TsEvent) -> Unit) {
 private fun Header(title: String, onBack: (() -> Unit)?, backLabel: String, trailing: @Composable RowScope.() -> Unit = {}) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(52.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         if (onBack != null) Key(backLabel, "back", icon = R.drawable.ic_chevron_left, onClick = onBack)
-        Text(text = title, style = TsType.headline, color = PicoTheme.colorScheme.labelPrimary, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(text = title, style = TsType.headline, color = PicoTheme.colorScheme.labelPrimary, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, onTextLayout = fits("header", title))
         trailing()
     }
 }
@@ -249,8 +261,9 @@ private fun ColumnScope.Home(state: TsUiState, onEvent: (TsEvent) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().height(56.dp)) {
         Seg(listOf(state.t(Ui.langZh) to state.zh, state.t(Ui.langEn) to !state.zh), "lang", 60.dp) { onEvent(TsEvent.Lang(it == 0)) }
         SoundKey(state, onEvent)
-        Seg(listOf(state.t(Ui.lifeSize) to !state.big, state.t(Ui.bigger) to state.big), "size", 84.dp) { onEvent(TsEvent.Big(it == 1)) }
-        Seg(listOf(state.t(Ui.speed1) to !state.slow, state.t(Ui.speedHalf) to state.slow), "speed", 80.dp) { onEvent(TsEvent.Slow(it == 1)) }
+        // short labels here: "放大 1.5×" / "慢放 0.5×" were clipped to "放大" / "慢放" in the 84 dp items (D16)
+        Seg(listOf(state.t(Ui.lifeSize) to !state.big, state.t(Ui.biggerShort) to state.big), "size", 84.dp) { onEvent(TsEvent.Big(it == 1)) }
+        Seg(listOf(state.t(Ui.speed1) to !state.slow, state.t(Ui.speedHalfShort) to state.slow), "speed", 80.dp) { onEvent(TsEvent.Slow(it == 1)) }
         Spacer(Modifier.weight(1f))
         Key(state.t(Ui.recenter), "recenter", icon = R.drawable.ic_recenter) { onEvent(TsEvent.Recenter) }
     }
@@ -266,10 +279,13 @@ private fun BigCard(title: String, sub: String, icon: Int, name: String, modifie
         colors = ButtonDefaults.buttonColors(containerColor = PicoTheme.colorScheme.fillTertiary, contentColor = PicoTheme.colorScheme.labelPrimary),
     ) {
         Column(modifier = Modifier.fillMaxSize().padding(vertical = 16.dp), horizontalAlignment = Alignment.Start, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Icon(painter = painterResource(icon), contentDescription = null, modifier = Modifier.size(40.dp), tint = PicoTheme.colorScheme.interaction)
+            // D13: a blue icon straight on the grey card is about 2:1; the blue goes into a disc with dark ink on it (5.6:1)
+            Box(modifier = Modifier.size(52.dp).clip(CircleShape).background(TsColors.InteractionFill), contentAlignment = Alignment.Center) {
+                Icon(painter = painterResource(icon), contentDescription = null, modifier = Modifier.size(32.dp), tint = TsColors.Ink)
+            }
             Spacer(Modifier.weight(1f))
-            Text(text = title, style = TsType.headline, color = PicoTheme.colorScheme.labelPrimary, maxLines = 1)
-            Text(text = sub, style = TsType.label, color = PicoTheme.colorScheme.labelPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(text = title, style = TsType.headline, color = PicoTheme.colorScheme.labelPrimary, maxLines = 1, onTextLayout = fits(name, title))
+            Text(text = sub, style = TsType.label, color = PicoTheme.colorScheme.labelPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis, onTextLayout = fits("${name}_sub", sub))
         }
     }
 }
@@ -291,7 +307,7 @@ private fun ColumnScope.LessonList(state: TsUiState, onEvent: (TsEvent) -> Unit)
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(text = state.f(Ui.stepsCount, steps), style = TsType.label, color = PicoTheme.colorScheme.labelPrimary)
                         if (l in state.learned) {
-                            Icon(painter = painterResource(R.drawable.ic_check_circle), contentDescription = null, modifier = Modifier.size(20.dp), tint = PicoTheme.colorScheme.passable)
+                            Icon(painter = painterResource(R.drawable.ic_check_circle), contentDescription = null, modifier = Modifier.size(20.dp), tint = PicoTheme.colorScheme.labelPrimary)
                             Text(text = state.t(Ui.seen), style = TsType.label, color = PicoTheme.colorScheme.labelPrimary)
                         }
                     }
@@ -313,7 +329,7 @@ private fun ColumnScope.LevelList(state: TsUiState, onEvent: (TsEvent) -> Unit) 
                 modifier = Modifier.probe("level_$l").clickable { onEvent(TsEvent.OpenLevel(l)) },
                 headlineContent = { Text(text = state.f(Ui.levelRow, l, Content.levelName[l - 1].of(state.zh)), style = TsType.title, color = PicoTheme.colorScheme.labelPrimary, maxLines = 1) },
                 supportingContent = { Text(text = state.f(Ui.questionsCount, total) + (state.best[l]?.let { "  ·  " + state.f(Ui.bestScore, it, total) } ?: ""), style = TsType.label, color = PicoTheme.colorScheme.labelPrimary, maxLines = 1) },
-                trailingContent = { if (l == next) Chip(state.t(Ui.recommended), PicoTheme.colorScheme.interaction, TsColors.Ink) },
+                trailingContent = { if (l == next) Chip(state.t(Ui.recommended), TsColors.InteractionFill, TsColors.Ink) },
             )
         }
     }
@@ -349,25 +365,35 @@ private fun ColumnScope.Review(state: TsUiState, onEvent: (TsEvent) -> Unit) {
 
 @Composable
 private fun ColumnScope.Settings(state: TsUiState, onEvent: (TsEvent) -> Unit) {
+    // q1-4 (profile D26): everything on one screen, no scrolling. Two columns of three rows, then a footer row pinned to
+    // the bottom with About on the left and Quit app on the right, so Quit app is always in sight.
     Header(state.t(Ui.settings), { onEvent(TsEvent.Back) }, state.t(Ui.back))
-    Column(modifier = Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())) {
-        SettingRow(state.t(Ui.language)) { Seg(listOf(state.t(Ui.langZh) to state.zh, state.t(Ui.langEn) to !state.zh), "set_lang", 72.dp) { onEvent(TsEvent.Lang(it == 0)) } }
-        SettingRow(state.t(Ui.sound)) { SoundKey(state, onEvent) }
-        SettingRow(state.t(Ui.officerSize)) { Seg(listOf(state.t(Ui.lifeSize) to !state.big, state.t(Ui.bigger) to state.big), "set_size", 110.dp) { onEvent(TsEvent.Big(it == 1)) } }
-        SettingRow(state.t(Ui.gestureSpeed)) { Seg(listOf(state.t(Ui.speed1) to !state.slow, state.t(Ui.speedHalf) to state.slow), "set_speed", 110.dp) { onEvent(TsEvent.Slow(it == 1)) } }
-        SettingRow(state.t(Ui.recenterRow)) { Key(state.t(Ui.recenter), "set_recenter", icon = R.drawable.ic_recenter) { onEvent(TsEvent.Recenter) } }
-        SettingRow(state.t(Ui.resetProgress), state.t(Ui.resetSub)) { Key(state.t(Ui.reset), "set_reset", icon = R.drawable.ic_refresh, danger = true) { onEvent(TsEvent.AskReset) } }
-        SettingRow(state.t(Ui.about), state.f(Ui.aboutLine, "v" + BuildConfig.VERSION_NAME)) {}
-        SettingRow(state.t(Ui.exitApp)) { Key(state.t(Ui.exitApp), "set_exit", icon = R.drawable.ic_logout, danger = true) { onEvent(TsEvent.AskExit) } }
+    Spacer(Modifier.height(8.dp))
+    Row(modifier = Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(32.dp)) {
+        Column(modifier = Modifier.weight(1f)) {
+            SettingRow(state.t(Ui.language), name = "row_lang") { Seg(listOf(state.t(Ui.langZh) to state.zh, state.t(Ui.langEn) to !state.zh), "set_lang", 72.dp) { onEvent(TsEvent.Lang(it == 0)) } }
+            SettingRow(state.t(Ui.sound), name = "row_sound") { SoundKey(state, onEvent) }
+            SettingRow(state.t(Ui.officerSize), name = "row_size") { Seg(listOf(state.t(Ui.lifeSize) to !state.big, state.t(Ui.bigger) to state.big), "set_size", 100.dp) { onEvent(TsEvent.Big(it == 1)) } }
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            SettingRow(state.t(Ui.gestureSpeed), name = "row_speed") { Seg(listOf(state.t(Ui.speed1) to !state.slow, state.t(Ui.speedHalf) to state.slow), "set_speed", 100.dp) { onEvent(TsEvent.Slow(it == 1)) } }
+            SettingRow(state.t(Ui.recenterRow), state.t(Ui.recenterSub), name = "row_recenter") { Key(state.t(Ui.recenter), "set_recenter", icon = R.drawable.ic_recenter) { onEvent(TsEvent.Recenter) } }
+            SettingRow(state.t(Ui.resetProgress), state.t(Ui.resetSub), name = "row_reset") { Key(state.t(Ui.reset), "set_reset", icon = R.drawable.ic_refresh, danger = true) { onEvent(TsEvent.AskReset) } }
+        }
+    }
+    Box(Modifier.fillMaxWidth().height(1.dp).background(PicoTheme.colorScheme.dividerLine))
+    Spacer(Modifier.height(8.dp))
+    SettingRow(state.t(Ui.about), state.f(Ui.aboutLine, "v" + BuildConfig.VERSION_NAME), name = "row_about") {
+        Key(state.t(Ui.exitApp), "set_exit", icon = R.drawable.ic_logout, danger = true) { onEvent(TsEvent.AskExit) }
     }
 }
 
 @Composable
-private fun SettingRow(title: String, sub: String? = null, trailing: @Composable () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(if (sub != null) 68.dp else 60.dp)) {
+private fun SettingRow(title: String, sub: String? = null, name: String = "row", trailing: @Composable () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().height(if (sub != null) 72.dp else 64.dp)) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = title, style = TsType.title, color = PicoTheme.colorScheme.labelPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (sub != null) Text(text = sub, style = TsType.label, color = PicoTheme.colorScheme.labelPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(text = title, style = TsType.title, color = PicoTheme.colorScheme.labelPrimary, maxLines = 1, onTextLayout = fits(name, title))
+            if (sub != null) Text(text = sub, style = TsType.label, color = PicoTheme.colorScheme.labelPrimary, maxLines = 2, onTextLayout = fits("${name}_sub", sub))
         }
         trailing()
     }
@@ -413,19 +439,24 @@ private fun ColumnScope.Intro(state: TsUiState, onEvent: (TsEvent) -> Unit) {
 private fun ColumnScope.Question(state: TsUiState, onEvent: (TsEvent) -> Unit) {
     val q = state.question ?: return
     val watching = state.phase == Phase.WATCH
+    // q1-2 (profile D13 / D16): the top row keeps only the level title, the counter, Sound and Home, so the longest English
+    // title ("Level 5 · Same signal, other lane", about 300 dp at 18 sp) fits on one line with room to spare; Hint moved
+    // to the lane row next to Watch again. Two lines are allowed as a fallback, never an ellipsis.
+    val title = state.levelTitle()
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().height(52.dp)) {
-        Text(text = state.levelTitle(), style = TsType.title, color = PicoTheme.colorScheme.labelPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+        Text(text = title, style = TsType.title, color = PicoTheme.colorScheme.labelPrimary, maxLines = 2, modifier = Modifier.weight(1f, fill = false), onTextLayout = fits("quiz_title", title))
         Chip("${state.index + 1} / ${state.questions.size}")
-        Spacer(Modifier.weight(1f))
-        Key(state.t(Ui.hint), "quiz_hint", icon = R.drawable.ic_lightbulb, enabled = watching, outline = if (state.hint) PicoTheme.colorScheme.interaction else null) { onEvent(TsEvent.Hint) }
+        // a tiny weight: the title (fill = false) may take nearly all the free width before it wraps
+        Spacer(Modifier.weight(0.01f))
         SoundKey(state, onEvent)
         Key(state.t(Ui.home), "quiz_home", icon = R.drawable.ic_home) { onEvent(TsEvent.Home) }
     }
     Spacer(Modifier.height(6.dp))
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().height(52.dp)) {
-        Chip(state.f(Ui.yourLane, Content.lane[state.lane]!!.of(state.zh)), PicoTheme.colorScheme.interaction, TsColors.Ink)
+        Chip(state.f(Ui.yourLane, Content.lane[state.lane]!!.of(state.zh)), TsColors.InteractionFill, TsColors.Ink)
         if (state.phase == Phase.SWITCHING) Text(text = state.t(Ui.switching), style = TsType.body, color = PicoTheme.colorScheme.labelPrimary)
         Spacer(Modifier.weight(1f))
+        Key(state.t(Ui.hint), "quiz_hint", icon = R.drawable.ic_lightbulb, enabled = watching, outline = if (state.hint) PicoTheme.colorScheme.interaction else null) { onEvent(TsEvent.Hint) }
         Key(state.t(Ui.replay), "quiz_replay", icon = R.drawable.ic_replay, enabled = state.phase != Phase.SWITCHING) { onEvent(TsEvent.Replay) }
     }
     if (state.hint && watching) {
@@ -478,7 +509,11 @@ private fun ColumnScope.Result(state: TsUiState, onEvent: (TsEvent) -> Unit) {
     Spacer(Modifier.height(6.dp))
     val missed = state.outcomes.filter { !it.ok }
     if (missed.isEmpty()) {
-        Text(text = state.t(Ui.allRight), style = TsType.title, color = PicoTheme.colorScheme.passable)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(painter = painterResource(R.drawable.ic_check_circle), contentDescription = null, modifier = Modifier.size(28.dp), tint = PicoTheme.colorScheme.labelPrimary)
+            Spacer(Modifier.width(8.dp))
+            Text(text = state.t(Ui.allRight), style = TsType.title, color = PicoTheme.colorScheme.labelPrimary)
+        }
         Spacer(Modifier.weight(1f))
     } else {
         Text(text = state.t(Ui.wrongList), style = TsType.label, color = PicoTheme.colorScheme.labelPrimary)
@@ -516,7 +551,7 @@ internal fun VerdictPanel(state: TsUiState?, onEvent: (TsEvent) -> Unit) {
             when (state.phase) {
                 Phase.CORRECT -> Triple(state.t(Ui.right), PicoTheme.colorScheme.passable, R.drawable.ic_check_circle)
                 Phase.TIMEOUT -> Triple(state.t(Ui.timeUp), PicoTheme.colorScheme.error, R.drawable.ic_timer)
-                Phase.DEMO -> Triple(state.t(Ui.demo), PicoTheme.colorScheme.interaction, R.drawable.ic_swap_horiz)
+                Phase.DEMO -> Triple(state.t(Ui.demo), TsColors.InteractionFill, R.drawable.ic_swap_horiz)
                 else -> Triple(state.t(Ui.wrong), PicoTheme.colorScheme.error, R.drawable.ic_cancel)
             }
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().height(44.dp)) {
@@ -561,8 +596,9 @@ internal fun VerdictPanel(state: TsUiState?, onEvent: (TsEvent) -> Unit) {
 @Composable
 private fun Explain(n: String, text: String) {
     Row(verticalAlignment = Alignment.Top, modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-        Box(modifier = Modifier.size(24.dp).clip(CircleShape).background(PicoTheme.colorScheme.fillSecondary), contentAlignment = Alignment.Center) {
-            Text(text = n, style = TsType.label, color = PicoTheme.colorScheme.labelPrimary)
+        // D13: the 14 sp digit on the small disc measured 3.6:1; 18 sp semi-bold on a 28 dp disc
+        Box(modifier = Modifier.size(28.dp).clip(CircleShape).background(PicoTheme.colorScheme.fillSecondary), contentAlignment = Alignment.Center) {
+            Text(text = n, style = TsType.title, color = PicoTheme.colorScheme.labelPrimary)
         }
         Spacer(Modifier.width(10.dp))
         Text(text = text, style = TsType.body, color = PicoTheme.colorScheme.labelPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -620,7 +656,7 @@ internal fun LessonPanel(state: TsUiState?, onEvent: (TsEvent) -> Unit) {
         val g = state.lessonGesture
         val title = g?.let { Content.gestureName[it]!!.of(state.zh) } ?: Content.lesson0Title.of(state.zh)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().height(52.dp)) {
-            Text(text = title, style = TsType.headline, color = PicoTheme.colorScheme.labelPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            Text(text = title, style = TsType.headline, color = PicoTheme.colorScheme.labelPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f), onTextLayout = fits("lesson_title", title))
             Chip(if (g == null) state.t(Ui.lesson0Of) else state.f(Ui.lessonOf, state.lesson))
             if (state.breakdown) {
                 Key(state.t(Ui.backToQuestion), "lesson_back", icon = R.drawable.ic_chevron_left) { onEvent(TsEvent.CloseBreakdown) }
@@ -647,7 +683,7 @@ internal fun LessonPanel(state: TsUiState?, onEvent: (TsEvent) -> Unit) {
                             .padding(horizontal = 10.dp, vertical = 8.dp)
                             .probe("step_$i"),
                 ) {
-                    Text(text = "${i + 1}", style = TsType.title, color = if (current) PicoTheme.colorScheme.interaction else PicoTheme.colorScheme.labelPrimary, modifier = Modifier.width(26.dp))
+                    Text(text = "${i + 1}", style = TsType.title, color = PicoTheme.colorScheme.labelPrimary, modifier = Modifier.width(26.dp))
                     Column {
                         Text(text = tr.of(state.zh), style = TsType.body, color = PicoTheme.colorScheme.labelPrimary, maxLines = if (current) 3 else 2, overflow = TextOverflow.Ellipsis)
                         if (!state.zh) Text(text = tr.zh, style = TsType.label.copy(fontSize = androidx.compose.ui.unit.TextUnit(12f, androidx.compose.ui.unit.TextUnitType.Sp)), color = PicoTheme.colorScheme.labelPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -658,7 +694,7 @@ internal fun LessonPanel(state: TsUiState?, onEvent: (TsEvent) -> Unit) {
         if (g != null) {
             Spacer(Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(painter = painterResource(R.drawable.ic_lightbulb), contentDescription = null, modifier = Modifier.size(20.dp), tint = PicoTheme.colorScheme.alert)
+                Icon(painter = painterResource(R.drawable.ic_lightbulb), contentDescription = null, modifier = Modifier.size(20.dp), tint = PicoTheme.colorScheme.labelPrimary)
                 Spacer(Modifier.width(8.dp))
                 Text(text = Content.mnemonic[g]!!.of(state.zh), style = TsType.body, color = PicoTheme.colorScheme.labelPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
@@ -680,7 +716,7 @@ internal fun LessonPanel(state: TsUiState?, onEvent: (TsEvent) -> Unit) {
                     "angle",
                     64.dp,
                 ) { onEvent(TsEvent.LessonAngle(listOf(Facing.SOUTH, Facing.WEST, Facing.EAST, Facing.NORTH)[it])) }
-                Seg(listOf(state.t(Ui.speed1) to !state.slow, state.t(Ui.speedHalf) to state.slow), "lesson_speed", 84.dp) { onEvent(TsEvent.Slow(it == 1)) }
+                Seg(listOf(state.t(Ui.speed1) to !state.slow, state.t(Ui.speedHalfShort) to state.slow), "lesson_speed", 84.dp) { onEvent(TsEvent.Slow(it == 1)) }
             }
         }
         if (!state.breakdown) {
@@ -716,18 +752,18 @@ internal fun DialogPanel(state: TsUiState?, onEvent: (TsEvent) -> Unit) {
             Spacer(Modifier.weight(1f))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End)) {
                 when {
-                    state.screen == Screen.BLOCKED -> Key(state.t(Ui.exit), "dialog_exit", icon = R.drawable.ic_logout, danger = true) { onEvent(TsEvent.Exit) }
+                    state.screen == Screen.BLOCKED -> Key(state.t(Ui.exit), "dialog_exit", icon = R.drawable.ic_logout, danger = true, height = 56.dp, large = true) { onEvent(TsEvent.Exit) }
                     state.dialog == Dialog.EXIT -> {
-                        Key(state.t(Ui.cancel), "dialog_cancel", icon = R.drawable.ic_close) { onEvent(TsEvent.CloseDialog) }
-                        Key(state.t(Ui.exit), "dialog_exit", icon = R.drawable.ic_logout, danger = true) { onEvent(TsEvent.Exit) }
+                        Key(state.t(Ui.cancel), "dialog_cancel", icon = R.drawable.ic_close, height = 56.dp, large = true) { onEvent(TsEvent.CloseDialog) }
+                        Key(state.t(Ui.exit), "dialog_exit", icon = R.drawable.ic_logout, danger = true, height = 56.dp, large = true) { onEvent(TsEvent.Exit) }
                     }
                     state.dialog == Dialog.RESET -> {
-                        Key(state.t(Ui.cancel), "dialog_cancel", icon = R.drawable.ic_close) { onEvent(TsEvent.CloseDialog) }
-                        Key(state.t(Ui.reset), "dialog_reset", icon = R.drawable.ic_delete, danger = true) { onEvent(TsEvent.ResetProgress) }
+                        Key(state.t(Ui.cancel), "dialog_cancel", icon = R.drawable.ic_close, height = 56.dp, large = true) { onEvent(TsEvent.CloseDialog) }
+                        Key(state.t(Ui.reset), "dialog_reset", icon = R.drawable.ic_delete, danger = true, height = 56.dp, large = true) { onEvent(TsEvent.ResetProgress) }
                     }
                     else -> {
-                        Key(state.t(Ui.leave), "dialog_leave", icon = R.drawable.ic_home) { onEvent(TsEvent.Leave) }
-                        Key(state.t(Ui.keepGoing), "dialog_stay", icon = R.drawable.ic_play_arrow, primary = true) { onEvent(TsEvent.CloseDialog) }
+                        Key(state.t(Ui.leave), "dialog_leave", icon = R.drawable.ic_home, height = 56.dp, large = true) { onEvent(TsEvent.Leave) }
+                        Key(state.t(Ui.keepGoing), "dialog_stay", icon = R.drawable.ic_play_arrow, primary = true, height = 56.dp, large = true) { onEvent(TsEvent.CloseDialog) }
                     }
                 }
             }
