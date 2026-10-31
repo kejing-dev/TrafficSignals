@@ -1,0 +1,6 @@
+Noto Sans SC (variable), subset for Spatial Ruler. A Modified Version under the SIL OFL 1.1.
+source: NotoSansSC-VF.ttf  Version 2.004-H2;hotconv 1.0.118;makeotfexe 2.5.65603
+axes kept: [('wght', 100.0, 100.0, 900.0)]
+glyphs: 409  characters: 354
+characters: §°±·×Øé÷—‘’“”…‰′″№←↑→↓↔↕≤②■□▲△◆○◌●✓　、。〈〉《》「」『』【】一七万三上下不与两个中主举九习了二于五交人他令以件会伸位低住体作你便保信候做停先光兜入全八公六关内再冲况准减几出分则判到前动势勺区十千压厘原去及双反取变口只可台右号同后向吧和哪四回在坐垂声备复大头夹好妨始姿子存学安完官定察寸对射小尖就尺屈左已帽平并应度开式弯当往待得心恢情意慢成所手打扣扫把招拢持指按挡挺换掉掌推提摆摇播收放文斜断新方时是暂最有朝本杆条来案模横次止正毫水沉没沿浸消清演点照熟现用由百的目直相看真着知确碍示离秒空立站第等答米纽练给继绩续缝置肩背胸能脑腾臂至节英荐行衣被裤要规视角解言警计认让许设试语课走起超路身车转辆边过近返还这进退选通速遍道部都里重错间限随零需静靠面音页题驶驾高！（），：；？｜～
+not in the source font (left to the system fallback): U+270B U+2726 U+27F2 U+29B8
