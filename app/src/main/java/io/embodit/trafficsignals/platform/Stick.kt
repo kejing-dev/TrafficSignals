@@ -1,7 +1,10 @@
 package io.embodit.trafficsignals.platform
 
+import com.pico.spatial.tracking.DataProvider
 import com.pico.spatial.tracking.controller.ControllerActionData
 import com.pico.spatial.tracking.controller.ControllerTrackingProvider
+import io.embodit.trafficsignals.domain.Quat4
+import io.embodit.trafficsignals.domain.Vec3
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -40,6 +43,23 @@ class Stick {
         provider = null
         right.set(0)
         left.set(0)
+    }
+
+    /**
+     * Ray of each tracked controller, Stage space (origin, unit direction along the controller's -Z), read once per frame
+     * on the main thread. Empty with hands or on the 6.1 emulator (the provider says DEVICE_NOT_SUPPORTED there).
+     */
+    fun rays(): List<Pair<Vec3, Vec3>> {
+        val p = provider ?: return emptyList()
+        if (runCatching { p.supportState }.getOrNull() != DataProvider.SupportState.SUPPORTED) return emptyList()
+        val data = runCatching { p.latestData }.getOrNull() ?: return emptyList()
+        val out = ArrayList<Pair<Vec3, Vec3>>(2)
+        for (pose in listOfNotNull(data.right, data.left)) {
+            val o = Vec3(pose.position.x, pose.position.y, pose.position.z)
+            val d = Quat4(pose.rotation.x, pose.rotation.y, pose.rotation.z, pose.rotation.w).rotate(Vec3(0f, 0f, -1f))
+            if (o.isFinite() && d.isFinite() && d.length > 0.5f) out += o to d
+        }
+        return out
     }
 
     /** -1 (left) .. 1 (right). */

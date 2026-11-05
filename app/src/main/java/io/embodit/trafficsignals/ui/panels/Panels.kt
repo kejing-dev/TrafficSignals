@@ -56,8 +56,6 @@ import com.pico.spatial.ui.design.SegmentControl
 import com.pico.spatial.ui.design.SegmentControlDefaults
 import com.pico.spatial.ui.design.SegmentItem
 import com.pico.spatial.ui.design.Text
-import com.pico.spatial.ui.foundation.material.backgroundMaterial
-import com.pico.spatial.ui.platform.Material
 import io.embodit.trafficsignals.BuildConfig
 import io.embodit.trafficsignals.R
 import io.embodit.trafficsignals.domain.Answer
@@ -76,25 +74,14 @@ import io.embodit.trafficsignals.ui.Screen
 import io.embodit.trafficsignals.ui.TsController
 import io.embodit.trafficsignals.ui.TsEvent
 import io.embodit.trafficsignals.ui.TsUiState
+import io.embodit.trafficsignals.ui.window.WindowCtl
 import io.embodit.trafficsignals.ui.debug.probe
-import io.embodit.trafficsignals.ui.scene.PanelSizes
 import io.embodit.trafficsignals.ui.theme.TsColors
 import io.embodit.trafficsignals.ui.theme.TsType
-
-private val GlassShape = RoundedCornerShape(28.dp)
 
 private fun TsUiState.t(tr: Tr): String = tr.of(zh)
 
 private fun TsUiState.f(tr: Tr, vararg args: Any): String = String.format(tr.of(zh), *args)
-
-/** Glass root of every panel (design: SpatialUI system glass, Material.Regular); [dim] = a dialog stands in front. */
-@Composable
-private fun Glass(w: Float, h: Float, dim: Boolean = false, padding: Dp = 24.dp, content: @Composable ColumnScope.() -> Unit) {
-    Box(modifier = Modifier.size(w.dp, h.dp).clip(GlassShape).backgroundMaterial(enable = true, style = Material.Regular).then(glassRefresh())) {
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) { content() }
-        if (dim) Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)))
-    }
-}
 
 // =============================================================================================
 // small pieces
@@ -116,6 +103,7 @@ private fun Key(
     enabled: Boolean = true,
     outline: Color? = null,
     large: Boolean = false,
+    fill: Boolean = false,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
@@ -132,7 +120,7 @@ private fun Key(
         Button(
             onClick = onClick,
             enabled = enabled,
-            modifier = Modifier.probe(name).height(height),
+            modifier = Modifier.probe(name).height(height).then(if (fill) Modifier.fillMaxWidth() else Modifier),
             size = ButtonDefaults.Regular.copy(height = height),
             shape = CircleShape,
             colors = ButtonDefaults.buttonColors(containerColor = container, contentColor = ink),
@@ -141,7 +129,7 @@ private fun Key(
                 Icon(painter = painterResource(icon), contentDescription = null, modifier = Modifier.size(22.dp), tint = ink)
                 Spacer(Modifier.width(8.dp))
             }
-            // [large] = 20 sp: the dialog keys; thin 18 sp CJK strokes of 退出 measured only 4.2:1 on the 2160 px capture (D13)
+            // [large] = 20 sp: the confirm keys; thin CJK strokes of 退出 measured only 4.2:1 on the 2160 px capture (D13)
             Text(text = text, maxLines = 1, color = ink, style = if (large) TsType.title.copy(fontSize = 20.sp, lineHeight = 26.sp) else TsType.title, onTextLayout = fits(name, text))
         }
     }
@@ -207,20 +195,26 @@ private fun PausedBar(state: TsUiState, onEvent: (TsEvent) -> Unit) {
 }
 
 // =============================================================================================
-// P1 home (S1 S2 S16 S17 S11 + settings)
+// The one system window (D8): every state draws in here, one at a time, so nothing can sit in front of anything
 // =============================================================================================
 
 @Composable
-internal fun HomePanel(state: TsUiState?, onEvent: (TsEvent) -> Unit) {
-    Glass(PanelSizes.HOME_W, PanelSizes.HOME_H, dim = state != null && state.dialog != Dialog.NONE, padding = 32.dp) {
-        if (state == null) return@Glass
+internal fun WindowPage(state: TsUiState, onEvent: (TsEvent) -> Unit) {
+    Column(modifier = Modifier.fillMaxSize()) {
         PausedBar(state, onEvent)
-        when (state.screen) {
-            Screen.STARTING, Screen.BLOCKED -> Starting(state)
-            Screen.LESSONS -> LessonList(state, onEvent)
-            Screen.LEVELS -> LevelList(state, onEvent)
-            Screen.REVIEW -> Review(state, onEvent)
-            Screen.SETTINGS -> Settings(state, onEvent)
+        when {
+            state.screen == Screen.BLOCKED || state.dialog != Dialog.NONE -> Confirm(state, onEvent)
+            state.screen == Screen.STARTING -> Starting(state)
+            state.screen == Screen.LESSONS -> LessonList(state, onEvent)
+            state.screen == Screen.LEVELS -> LevelList(state, onEvent)
+            state.screen == Screen.REVIEW -> Review(state, onEvent)
+            state.screen == Screen.SETTINGS -> Settings(state, onEvent)
+            state.screen == Screen.LESSON -> Lesson(state, onEvent)
+            state.screen == Screen.INTRO -> Intro(state, onEvent)
+            state.screen == Screen.RESULT -> Result(state, onEvent)
+            state.screen == Screen.QUIZ && state.breakdown -> Lesson(state, onEvent)
+            state.screen == Screen.QUIZ && state.judged -> Verdict(state, onEvent)
+            state.screen == Screen.QUIZ -> Question(state, onEvent)
             else -> Home(state, onEvent)
         }
     }
@@ -240,9 +234,7 @@ private fun ColumnScope.Starting(state: TsUiState) {
 
 @Composable
 private fun ColumnScope.Home(state: TsUiState, onEvent: (TsEvent) -> Unit) {
-    Header(state.t(Ui.appName), null, "") {
-        Key(state.t(Ui.settings), "home_settings", icon = R.drawable.ic_settings) { onEvent(TsEvent.OpenSettings) }
-    }
+    Header(state.t(Ui.appName), null, "")
     Text(text = state.t(Ui.oneLiner), style = TsType.body, color = PicoTheme.colorScheme.labelPrimary, maxLines = 2)
     Spacer(Modifier.height(16.dp))
     val next = Levels.recommended(state.best)
@@ -261,9 +253,6 @@ private fun ColumnScope.Home(state: TsUiState, onEvent: (TsEvent) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().height(56.dp)) {
         Seg(listOf(state.t(Ui.langZh) to state.zh, state.t(Ui.langEn) to !state.zh), "lang", 60.dp) { onEvent(TsEvent.Lang(it == 0)) }
         SoundKey(state, onEvent)
-        // short labels here: "放大 1.5×" / "慢放 0.5×" were clipped to "放大" / "慢放" in the 84 dp items (D16)
-        Seg(listOf(state.t(Ui.lifeSize) to !state.big, state.t(Ui.biggerShort) to state.big), "size", 84.dp) { onEvent(TsEvent.Big(it == 1)) }
-        Seg(listOf(state.t(Ui.speed1) to !state.slow, state.t(Ui.speedHalfShort) to state.slow), "speed", 80.dp) { onEvent(TsEvent.Slow(it == 1)) }
         Spacer(Modifier.weight(1f))
         Key(state.t(Ui.recenter), "recenter", icon = R.drawable.ic_recenter) { onEvent(TsEvent.Recenter) }
     }
@@ -281,18 +270,19 @@ private fun BigCard(title: String, sub: String, icon: Int, name: String, modifie
         Column(modifier = Modifier.fillMaxSize().padding(vertical = 16.dp), horizontalAlignment = Alignment.Start, verticalArrangement = Arrangement.spacedBy(8.dp)) {
             // D13: a blue icon straight on the grey card is about 2:1; the blue goes into a disc with dark ink on it (5.6:1)
             Box(modifier = Modifier.size(52.dp).clip(CircleShape).background(TsColors.InteractionFill), contentAlignment = Alignment.Center) {
-                Icon(painter = painterResource(icon), contentDescription = null, modifier = Modifier.size(32.dp), tint = TsColors.Ink)
+                Icon(painter = painterResource(icon), contentDescription = null, modifier = Modifier.size(28.dp), tint = TsColors.Ink)
             }
             Spacer(Modifier.weight(1f))
-            Text(text = title, style = TsType.headline, color = PicoTheme.colorScheme.labelPrimary, maxLines = 1, onTextLayout = fits(name, title))
-            Text(text = sub, style = TsType.label, color = PicoTheme.colorScheme.labelPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis, onTextLayout = fits("${name}_sub", sub))
+            Text(text = title, style = TsType.title.copy(fontSize = 20.sp, lineHeight = 26.sp), color = PicoTheme.colorScheme.labelPrimary, maxLines = 1, onTextLayout = fits(name, title))
+            // two lines reserved: the three titles stay level whichever card wraps
+            Text(text = sub, style = TsType.label, color = PicoTheme.colorScheme.labelPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.height(44.dp), onTextLayout = fits("${name}_sub", sub))
         }
     }
 }
 
 @Composable
 private fun ColumnScope.LessonList(state: TsUiState, onEvent: (TsEvent) -> Unit) {
-    Header(state.t(Ui.lessonsTitle), { onEvent(TsEvent.Back) }, state.t(Ui.back))
+    Header(state.t(Ui.lessonsTitle), null, "")
     Spacer(Modifier.height(8.dp))
     val list = rememberLazyListState()
     LazyColumn(state = list, modifier = Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(14.dp))) {
@@ -319,7 +309,7 @@ private fun ColumnScope.LessonList(state: TsUiState, onEvent: (TsEvent) -> Unit)
 
 @Composable
 private fun ColumnScope.LevelList(state: TsUiState, onEvent: (TsEvent) -> Unit) {
-    Header(state.t(Ui.levelsTitle), { onEvent(TsEvent.Back) }, state.t(Ui.back))
+    Header(state.t(Ui.levelsTitle), null, "")
     Spacer(Modifier.height(8.dp))
     val next = Levels.recommended(state.best)
     LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(14.dp))) {
@@ -337,7 +327,7 @@ private fun ColumnScope.LevelList(state: TsUiState, onEvent: (TsEvent) -> Unit) 
 
 @Composable
 private fun ColumnScope.Review(state: TsUiState, onEvent: (TsEvent) -> Unit) {
-    Header(state.t(Ui.reviewTitle), { onEvent(TsEvent.Back) }, state.t(Ui.back)) {
+    Header(state.t(Ui.reviewTitle), null, "") {
         Key(state.t(Ui.clear), "review_clear", icon = R.drawable.ic_delete, enabled = state.mistakes.isNotEmpty()) { onEvent(TsEvent.ClearMistakes) }
         Key(state.t(Ui.drill), "review_drill", icon = R.drawable.ic_replay, primary = true, enabled = state.mistakes.isNotEmpty()) { onEvent(TsEvent.Drill) }
     }
@@ -367,7 +357,7 @@ private fun ColumnScope.Review(state: TsUiState, onEvent: (TsEvent) -> Unit) {
 private fun ColumnScope.Settings(state: TsUiState, onEvent: (TsEvent) -> Unit) {
     // q1-4 (profile D26): everything on one screen, no scrolling. Two columns of three rows, then a footer row pinned to
     // the bottom with About on the left and Quit app on the right, so Quit app is always in sight.
-    Header(state.t(Ui.settings), { onEvent(TsEvent.Back) }, state.t(Ui.back))
+    Header(state.t(Ui.settings), null, "")
     Spacer(Modifier.height(8.dp))
     Row(modifier = Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(32.dp)) {
         Column(modifier = Modifier.weight(1f)) {
@@ -390,7 +380,7 @@ private fun ColumnScope.Settings(state: TsUiState, onEvent: (TsEvent) -> Unit) {
 
 @Composable
 private fun SettingRow(title: String, sub: String? = null, name: String = "row", trailing: @Composable () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().height(if (sub != null) 72.dp else 64.dp)) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().height(if (sub != null) 80.dp else 64.dp)) {
         Column(modifier = Modifier.weight(1f)) {
             Text(text = title, style = TsType.title, color = PicoTheme.colorScheme.labelPrimary, maxLines = 1, onTextLayout = fits(name, title))
             if (sub != null) Text(text = sub, style = TsType.label, color = PicoTheme.colorScheme.labelPrimary, maxLines = 2, onTextLayout = fits("${name}_sub", sub))
@@ -400,29 +390,15 @@ private fun SettingRow(title: String, sub: String? = null, name: String = "row",
 }
 
 // =============================================================================================
-// P2 question (S5 S6 S9 S10 S14 + answers)
+// Quiz (S5 S6 S9 S10 S14 + answers), in the window
 // =============================================================================================
-
-@Composable
-internal fun QuizPanel(state: TsUiState?, onEvent: (TsEvent) -> Unit) {
-    Glass(PanelSizes.QUIZ_W, PanelSizes.QUIZ_H, dim = state != null && state.dialog != Dialog.NONE) {
-        if (state == null) return@Glass
-        PausedBar(state, onEvent)
-        when (state.screen) {
-            Screen.INTRO -> Intro(state, onEvent)
-            Screen.RESULT -> Result(state, onEvent)
-            else -> Question(state, onEvent)
-        }
-    }
-}
 
 private fun TsUiState.levelTitle(): String = if (level == 0) t(Ui.drillName) else String.format(Ui.levelRow.of(zh), level, Content.levelName[level - 1].of(zh))
 
 @Composable
 private fun ColumnScope.Intro(state: TsUiState, onEvent: (TsEvent) -> Unit) {
-    Header(state.levelTitle(), null, "") {
+    Header(state.levelTitle(), { onEvent(TsEvent.OpenLevels) }, state.t(Ui.back)) {
         SoundKey(state, onEvent)
-        Key(state.t(Ui.home), "quiz_home", icon = R.drawable.ic_home) { onEvent(TsEvent.Home) }
     }
     Spacer(Modifier.height(12.dp))
     val goal = if (state.level in 1..6) Content.levelGoal[state.level - 1].of(state.zh) else ""
@@ -435,13 +411,9 @@ private fun ColumnScope.Intro(state: TsUiState, onEvent: (TsEvent) -> Unit) {
     }
 }
 
+/** Level title, counter, Sound, Home: the top row of a question and of its verdict. Two title lines allowed, never an ellipsis (q1-2). */
 @Composable
-private fun ColumnScope.Question(state: TsUiState, onEvent: (TsEvent) -> Unit) {
-    val q = state.question ?: return
-    val watching = state.phase == Phase.WATCH
-    // q1-2 (profile D13 / D16): the top row keeps only the level title, the counter, Sound and Home, so the longest English
-    // title ("Level 5 · Same signal, other lane", about 300 dp at 18 sp) fits on one line with room to spare; Hint moved
-    // to the lane row next to Watch again. Two lines are allowed as a fallback, never an ellipsis.
+private fun QuizTop(state: TsUiState, onEvent: (TsEvent) -> Unit) {
     val title = state.levelTitle()
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().height(52.dp)) {
         Text(text = title, style = TsType.title, color = PicoTheme.colorScheme.labelPrimary, maxLines = 2, modifier = Modifier.weight(1f, fill = false), onTextLayout = fits("quiz_title", title))
@@ -451,6 +423,13 @@ private fun ColumnScope.Question(state: TsUiState, onEvent: (TsEvent) -> Unit) {
         SoundKey(state, onEvent)
         Key(state.t(Ui.home), "quiz_home", icon = R.drawable.ic_home) { onEvent(TsEvent.Home) }
     }
+}
+
+@Composable
+private fun ColumnScope.Question(state: TsUiState, onEvent: (TsEvent) -> Unit) {
+    val q = state.question ?: return
+    val watching = state.phase == Phase.WATCH && !state.paused
+    QuizTop(state, onEvent)
     Spacer(Modifier.height(6.dp))
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().height(52.dp)) {
         Chip(state.f(Ui.yourLane, Content.lane[state.lane]!!.of(state.zh)), TsColors.InteractionFill, TsColors.Ink)
@@ -463,9 +442,11 @@ private fun ColumnScope.Question(state: TsUiState, onEvent: (TsEvent) -> Unit) {
         Text(text = state.f(Ui.hintLine, Content.facing[q.facing]!!.of(state.zh), Content.side[q.facing.you]!!.of(state.zh)), style = TsType.body, color = PicoTheme.colorScheme.labelPrimary, maxLines = 1, modifier = Modifier.padding(top = 4.dp))
     }
     Spacer(Modifier.weight(1f))
+    Text(text = state.t(Ui.askLane), style = TsType.headline, color = PicoTheme.colorScheme.labelPrimary, maxLines = 2, modifier = Modifier.align(Alignment.CenterHorizontally), onTextLayout = fits("quiz_ask", state.t(Ui.askLane)))
+    Spacer(Modifier.weight(1f))
     val correct = state.verdict?.answer
     @Composable
-    fun answer(a: Answer) {
+    fun RowScope.answer(a: Answer, w: Float = 1f) {
         val outline =
             when {
                 watching -> null
@@ -473,17 +454,18 @@ private fun ColumnScope.Question(state: TsUiState, onEvent: (TsEvent) -> Unit) {
                 a == state.yours -> PicoTheme.colorScheme.error
                 else -> null
             }
-        Key(Content.answer[a]!!.of(state.zh), "answer_${a.id}", height = 56.dp, enabled = watching || outline != null, outline = outline, modifier = Modifier) { onEvent(TsEvent.Pick(a)) }
+        Key(Content.answer[a]!!.of(state.zh), "answer_${a.id}", height = 60.dp, enabled = watching || outline != null, outline = outline, fill = true, modifier = Modifier.weight(w)) { onEvent(TsEvent.Pick(a)) }
     }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-        Text(text = state.t(Ui.groupMove), style = TsType.label, color = PicoTheme.colorScheme.labelPrimary, modifier = Modifier.width(56.dp))
+        Text(text = state.t(Ui.groupMove), style = TsType.label, color = PicoTheme.colorScheme.labelPrimary, modifier = Modifier.width(48.dp))
+        // English "Pull into waiting box" is twice as long as its neighbours
         answer(Answer.GO)
         answer(Answer.STOP)
-        answer(Answer.WAIT)
+        answer(Answer.WAIT, if (state.zh) 1f else 2f)
     }
     Spacer(Modifier.height(10.dp))
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-        Text(text = state.t(Ui.groupDo), style = TsType.label, color = PicoTheme.colorScheme.labelPrimary, modifier = Modifier.width(56.dp))
+        Text(text = state.t(Ui.groupDo), style = TsType.label, color = PicoTheme.colorScheme.labelPrimary, modifier = Modifier.width(48.dp))
         answer(Answer.SLOW)
         answer(Answer.LANE)
         answer(Answer.PULL)
@@ -539,14 +521,16 @@ private fun ColumnScope.Result(state: TsUiState, onEvent: (TsEvent) -> Unit) {
 }
 
 // =============================================================================================
-// P3 verdict (S7 S8 S14 + demo)
+// Verdict (S7 S8 S14 + demo): stands in for the question in the window, the road shows the flows
 // =============================================================================================
 
 @Composable
-internal fun VerdictPanel(state: TsUiState?, onEvent: (TsEvent) -> Unit) {
-    Glass(PanelSizes.VERDICT_W, PanelSizes.VERDICT_H, dim = state != null && state.dialog != Dialog.NONE) {
-        val q = state?.question ?: return@Glass
-        val v = state.verdict ?: return@Glass
+private fun ColumnScope.Verdict(state: TsUiState, onEvent: (TsEvent) -> Unit) {
+    run {
+        val q = state.question ?: return
+        val v = state.verdict ?: return
+        QuizTop(state, onEvent)
+        Spacer(Modifier.height(6.dp))
         val (title, color, icon) =
             when (state.phase) {
                 Phase.CORRECT -> Triple(state.t(Ui.right), PicoTheme.colorScheme.passable, R.drawable.ic_check_circle)
@@ -560,7 +544,7 @@ internal fun VerdictPanel(state: TsUiState?, onEvent: (TsEvent) -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.clip(RoundedCornerShape(22.dp)).background(color).padding(horizontal = 14.dp, vertical = 4.dp).probe("verdict_title"),
             ) {
-                Icon(painter = painterResource(icon), contentDescription = null, modifier = Modifier.size(28.dp), tint = TsColors.Ink)
+                Icon(painter = painterResource(icon), contentDescription = null, modifier = Modifier.size(32.dp), tint = TsColors.Ink)
                 Spacer(Modifier.width(8.dp))
                 Text(text = title, style = TsType.headline, color = TsColors.Ink, maxLines = 1)
             }
@@ -576,12 +560,15 @@ internal fun VerdictPanel(state: TsUiState?, onEvent: (TsEvent) -> Unit) {
             overflow = TextOverflow.Ellipsis,
         )
         Spacer(Modifier.height(10.dp))
-        Explain("1", state.f(Ui.line1, Content.facing[q.facing]!!.of(state.zh), Content.side[q.facing.you]!!.of(state.zh)))
-        Explain("2", Content.releaseLine(q.gesture).of(state.zh))
-        Explain("3", state.f(Ui.line3, Content.lane[state.lane]!!.of(state.zh), correct))
-        Spacer(Modifier.height(8.dp))
-        MiniMap(q.facing, state.lane, Modifier.fillMaxWidth().height(150.dp))
-        Spacer(Modifier.weight(1f))
+        Row(modifier = Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+            Column(modifier = Modifier.weight(1f)) {
+                Explain("1", state.f(Ui.line1, Content.facing[q.facing]!!.of(state.zh), Content.side[q.facing.you]!!.of(state.zh)))
+                Explain("2", Content.releaseLine(q.gesture).of(state.zh))
+                Explain("3", state.f(Ui.line3, Content.lane[state.lane]!!.of(state.zh), correct))
+            }
+            MiniMap(q.facing, state.lane, Modifier.width(250.dp).fillMaxHeight())
+        }
+        Spacer(Modifier.height(12.dp))
         val last = state.index + 1 >= state.questions.size
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End)) {
             Key(state.t(Ui.breakdown), "verdict_breakdown", icon = R.drawable.ic_format_list_numbered) { onEvent(TsEvent.Breakdown) }
@@ -601,7 +588,7 @@ private fun Explain(n: String, text: String) {
             Text(text = n, style = TsType.title, color = PicoTheme.colorScheme.labelPrimary)
         }
         Spacer(Modifier.width(10.dp))
-        Text(text = text, style = TsType.body, color = PicoTheme.colorScheme.labelPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(text = text, style = TsType.body, color = PicoTheme.colorScheme.labelPrimary, maxLines = 3, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -645,14 +632,12 @@ private fun MiniMap(facing: Facing, lane: Lane, modifier: Modifier) {
 }
 
 // =============================================================================================
-// P4 lesson (S3 S4) and the breakdown stand-in for P3
+// Lesson (S3 S4) and the breakdown stand-in for the verdict
 // =============================================================================================
 
 @Composable
-internal fun LessonPanel(state: TsUiState?, onEvent: (TsEvent) -> Unit) {
-    Glass(PanelSizes.LESSON_W, PanelSizes.LESSON_H, dim = state != null && state.dialog != Dialog.NONE) {
-        if (state == null) return@Glass
-        PausedBar(state, onEvent)
+private fun ColumnScope.Lesson(state: TsUiState, onEvent: (TsEvent) -> Unit) {
+    run {
         val g = state.lessonGesture
         val title = g?.let { Content.gestureName[it]!!.of(state.zh) } ?: Content.lesson0Title.of(state.zh)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().height(52.dp)) {
@@ -661,7 +646,7 @@ internal fun LessonPanel(state: TsUiState?, onEvent: (TsEvent) -> Unit) {
             if (state.breakdown) {
                 Key(state.t(Ui.backToQuestion), "lesson_back", icon = R.drawable.ic_chevron_left) { onEvent(TsEvent.CloseBreakdown) }
             } else {
-                Key(state.t(Ui.home), "lesson_home", icon = R.drawable.ic_home) { onEvent(TsEvent.Home) }
+                Key(state.t(Ui.back), "lesson_back_list", icon = R.drawable.ic_chevron_left) { onEvent(TsEvent.Back) }
             }
         }
         Spacer(Modifier.height(6.dp))
@@ -731,44 +716,69 @@ internal fun LessonPanel(state: TsUiState?, onEvent: (TsEvent) -> Unit) {
 }
 
 // =============================================================================================
-// DLG (S12 leave, S13 blocked, exit and reset confirmations)
+// Confirmations (S12 leave, S13 blocked, exit, reset): take the page's place in the window, no second panel (D8)
 // =============================================================================================
 
 @Composable
-internal fun DialogPanel(state: TsUiState?, onEvent: (TsEvent) -> Unit) {
-    Box(modifier = Modifier.size(PanelSizes.DIALOG_W.dp, PanelSizes.DIALOG_H.dp), contentAlignment = Alignment.Center) {
-        if (state == null) return@Box
-        Column(modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(28.dp)).backgroundMaterial(enable = true, style = Material.Thick).then(glassRefresh()).padding(24.dp)) {
-            val (title, body) =
-                when {
-                    state.screen == Screen.BLOCKED -> state.t(Ui.blockedTitle) to state.f(Ui.blockedBody, state.blockReason ?: "?")
-                    state.dialog == Dialog.EXIT -> state.t(Ui.exitTitle) to state.t(Ui.exitBody)
-                    state.dialog == Dialog.RESET -> state.t(Ui.resetTitle) to state.t(Ui.resetBody)
-                    else -> state.t(Ui.leaveTitle) to state.t(Ui.leaveBody)
-                }
-            Text(text = title, style = TsType.headline, color = PicoTheme.colorScheme.labelPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Spacer(Modifier.height(8.dp))
-            Text(text = body, style = TsType.body, color = PicoTheme.colorScheme.labelPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Spacer(Modifier.weight(1f))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End)) {
-                when {
-                    state.screen == Screen.BLOCKED -> Key(state.t(Ui.exit), "dialog_exit", icon = R.drawable.ic_logout, danger = true, height = 56.dp, large = true) { onEvent(TsEvent.Exit) }
-                    state.dialog == Dialog.EXIT -> {
-                        Key(state.t(Ui.cancel), "dialog_cancel", icon = R.drawable.ic_close, height = 56.dp, large = true) { onEvent(TsEvent.CloseDialog) }
-                        Key(state.t(Ui.exit), "dialog_exit", icon = R.drawable.ic_logout, danger = true, height = 56.dp, large = true) { onEvent(TsEvent.Exit) }
-                    }
-                    state.dialog == Dialog.RESET -> {
-                        Key(state.t(Ui.cancel), "dialog_cancel", icon = R.drawable.ic_close, height = 56.dp, large = true) { onEvent(TsEvent.CloseDialog) }
-                        Key(state.t(Ui.reset), "dialog_reset", icon = R.drawable.ic_delete, danger = true, height = 56.dp, large = true) { onEvent(TsEvent.ResetProgress) }
-                    }
-                    else -> {
-                        Key(state.t(Ui.leave), "dialog_leave", icon = R.drawable.ic_home, height = 56.dp, large = true) { onEvent(TsEvent.Leave) }
-                        Key(state.t(Ui.keepGoing), "dialog_stay", icon = R.drawable.ic_play_arrow, primary = true, height = 56.dp, large = true) { onEvent(TsEvent.CloseDialog) }
-                    }
-                }
+private fun ColumnScope.Confirm(state: TsUiState, onEvent: (TsEvent) -> Unit) {
+    val (title, body) =
+        when {
+            state.screen == Screen.BLOCKED -> state.t(Ui.blockedTitle) to state.f(Ui.blockedBody, state.blockReason ?: "?")
+            state.dialog == Dialog.EXIT -> state.t(Ui.exitTitle) to state.t(Ui.exitBody)
+            state.dialog == Dialog.RESET -> state.t(Ui.resetTitle) to state.t(Ui.resetBody)
+            else -> state.t(Ui.leaveTitle) to state.t(Ui.leaveBody)
+        }
+    Spacer(Modifier.weight(1f))
+    Text(text = title, style = TsType.headline, color = PicoTheme.colorScheme.labelPrimary, maxLines = 2, modifier = Modifier.align(Alignment.CenterHorizontally), onTextLayout = fits("dialog_title", title))
+    Spacer(Modifier.height(12.dp))
+    Text(text = body, style = TsType.body, color = PicoTheme.colorScheme.labelPrimary, maxLines = 3, modifier = Modifier.align(Alignment.CenterHorizontally), onTextLayout = fits("dialog_body", body))
+    Spacer(Modifier.height(32.dp))
+    Row(modifier = Modifier.align(Alignment.CenterHorizontally), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+        when {
+            state.screen == Screen.BLOCKED -> Key(state.t(Ui.exit), "dialog_exit", icon = R.drawable.ic_logout, danger = true, height = 56.dp, large = true) { onEvent(TsEvent.Exit) }
+            state.dialog == Dialog.EXIT -> {
+                Key(state.t(Ui.cancel), "dialog_cancel", icon = R.drawable.ic_close, height = 56.dp, large = true) { onEvent(TsEvent.CloseDialog) }
+                Key(state.t(Ui.exit), "dialog_exit", icon = R.drawable.ic_logout, danger = true, height = 56.dp, large = true) { onEvent(TsEvent.Exit) }
+            }
+            state.dialog == Dialog.RESET -> {
+                Key(state.t(Ui.cancel), "dialog_cancel", icon = R.drawable.ic_close, height = 56.dp, large = true) { onEvent(TsEvent.CloseDialog) }
+                Key(state.t(Ui.reset), "dialog_reset", icon = R.drawable.ic_delete, danger = true, height = 56.dp, large = true) { onEvent(TsEvent.ResetProgress) }
+            }
+            else -> {
+                Key(state.t(Ui.leave), "dialog_leave", icon = R.drawable.ic_home, height = 56.dp, large = true) { onEvent(TsEvent.Leave) }
+                Key(state.t(Ui.keepGoing), "dialog_stay", icon = R.drawable.ic_play_arrow, primary = true, height = 56.dp, large = true) { onEvent(TsEvent.CloseDialog) }
             }
         }
     }
+    Spacer(Modifier.weight(1f))
+}
+
+// =============================================================================================
+// On the Stage: only while the window is not there (native-window-move §3.3): "打开面板", or "平视前方" while it waits
+// =============================================================================================
+
+@Composable
+internal fun OpenChip(zh: Boolean) {
+    Box(Modifier.size(ChipSize.W.dp, ChipSize.H.dp), contentAlignment = Alignment.Center) {
+        if (WindowCtl.levelHint) {
+            // D9: the window waits for a level head; not a key, nothing to press
+            Column(
+                Modifier.fillMaxSize().clip(RoundedCornerShape(24.dp)).background(TsColors.Ink.copy(alpha = 0.85f)).padding(horizontal = 16.dp, vertical = 6.dp).probe("look_level"),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text(text = Ui.lookLevel.of(zh), style = TsType.title, color = TsColors.LaneWhite, maxLines = 1, onTextLayout = fits("chip/look_level", Ui.lookLevel.of(zh)))
+                Text(text = Ui.lookLevel2.of(zh), style = TsType.label, color = TsColors.LaneWhite, maxLines = 1, onTextLayout = fits("chip/look_level_2", Ui.lookLevel2.of(zh)))
+            }
+            return@Box
+        }
+        Key(Ui.openPanel.of(zh), "open_panel", icon = R.drawable.ic_open_in_new, primary = true, height = 56.dp, large = true) { WindowCtl.reopen("chip") }
+    }
+}
+
+internal object ChipSize {
+    const val W = 340f
+    const val H = 96f
 }
 
 @Suppress("unused")

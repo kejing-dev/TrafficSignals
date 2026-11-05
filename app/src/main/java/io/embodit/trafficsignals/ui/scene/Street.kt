@@ -29,7 +29,7 @@ internal object Street {
     const val GROUND = 60f
     const val TEX = 2048
     const val POST_R = 0.6f
-    const val POST_H = 0.40f
+    const val POST_H = io.embodit.trafficsignals.domain.StageLayout.POST_H
 
     /** Unit vector of an approach (from the centre out). */
     fun out(c: Compass): Vec3 = c.vec
@@ -406,7 +406,7 @@ internal object Street {
         fun pt(i: Int, j: Int): Vec3 {
             val u = i / nx.toFloat() * 2 - 1
             val v = j / nz.toFloat()
-            val y = eyeH - 0.45f - 0.08f * v - 0.08f * u * u * u * u - 0.03f * v * v
+            val y = eyeH - io.embodit.trafficsignals.domain.StageLayout.HOOD_DROP - 0.08f * v - 0.08f * u * u * u * u - 0.03f * v * v
             return Vec3(cx + u * 0.85f, y, z0 + (z1 - z0) * v)
         }
         for (i in 0 until nx) for (j in 0 until nz) t.quad(color, pt(i, j), pt(i + 1, j), pt(i + 1, j + 1), pt(i, j + 1), 0)

@@ -16,6 +16,12 @@ import io.embodit.trafficsignals.domain.nextAskableLane
 import io.embodit.trafficsignals.platform.Sound
 import io.embodit.trafficsignals.platform.Store
 import io.embodit.trafficsignals.platform.TsLog
+import io.embodit.trafficsignals.ui.window.TAB_HOME
+import io.embodit.trafficsignals.ui.window.TAB_LESSONS
+import io.embodit.trafficsignals.ui.window.TAB_LEVELS
+import io.embodit.trafficsignals.ui.window.TAB_REVIEW
+import io.embodit.trafficsignals.ui.window.TAB_SETTINGS
+import io.embodit.trafficsignals.ui.window.WindowCtl
 import java.util.Random
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,6 +34,8 @@ import kotlinx.coroutines.launch
 
 sealed interface TsEvent {
     data object Home : TsEvent
+    /** A TabBar item (ui.window.TAB_*). */
+    data class Tab(val id: String) : TsEvent
     data object OpenLessons : TsEvent
     data object OpenLevels : TsEvent
     data object OpenReview : TsEvent
@@ -104,6 +112,7 @@ object TsController {
         val s = Store(context.applicationContext)
         store = s
         sound.enabled = s.sound
+        scope.launch(Dispatchers.Default) { sound.warm() }
         _state.value = TsUiState(zh = s.zh, sound = s.sound, big = s.big, slow = s.slow, best = s.best, mistakes = s.mistakes, learned = s.learned)
         log("start")
     }
@@ -127,11 +136,12 @@ object TsController {
         val s = _state.value
         if (e !is TsEvent.LessonAt && e !is TsEvent.GestureDone) TsLog.i("EVENT $e")
         when (e) {
-            TsEvent.Home -> if (s.inQuiz && s.screen == Screen.QUIZ) set("home-ask") { it.copy(dialog = Dialog.LEAVE) } else goHome("home")
-            TsEvent.OpenLessons -> set("lessons") { it.copy(screen = Screen.LESSONS, dialog = Dialog.NONE) }
-            TsEvent.OpenLevels -> set("levels") { it.copy(screen = Screen.LEVELS, dialog = Dialog.NONE) }
-            TsEvent.OpenReview -> set("review") { it.copy(screen = Screen.REVIEW, dialog = Dialog.NONE) }
-            TsEvent.OpenSettings -> set("settings") { it.copy(screen = Screen.SETTINGS, dialog = Dialog.NONE) }
+            TsEvent.Home -> if (s.inQuiz && s.screen == Screen.QUIZ) askLeave(null) else goHome("home")
+            is TsEvent.Tab -> tab(e.id)
+            TsEvent.OpenLessons -> goTo(Screen.LESSONS, "lessons")
+            TsEvent.OpenLevels -> goTo(Screen.LEVELS, "levels")
+            TsEvent.OpenReview -> goTo(Screen.REVIEW, "review")
+            TsEvent.OpenSettings -> goTo(Screen.SETTINGS, "settings")
             TsEvent.Back ->
                 when (s.screen) {
                     Screen.LESSON -> if (s.breakdown) onEvent(TsEvent.CloseBreakdown) else set("back") { it.copy(screen = Screen.LESSONS) }
@@ -171,9 +181,12 @@ object TsController {
                 set("breakdown") { it.copy(breakdown = true, lesson = g.ordinal + 1, lessonStep = 0, lessonPlaying = false, lessonAngle = it.question!!.facing) }
             }
             TsEvent.CloseBreakdown -> set("breakdown-close") { it.copy(breakdown = false, gestureEpoch = it.gestureEpoch + 1) }
-            TsEvent.AskLeave -> set("leave-ask") { it.copy(dialog = Dialog.LEAVE) }
-            TsEvent.Leave -> goHome("leave")
-            TsEvent.CloseDialog -> set("dialog-close") { it.copy(dialog = Dialog.NONE) }
+            TsEvent.AskLeave -> askLeave(null)
+            TsEvent.Leave -> tabNow(s.leaveTo ?: TAB_HOME, "leave")
+            TsEvent.CloseDialog -> {
+                set("dialog-close") { it.copy(dialog = Dialog.NONE) }
+                if (!s.paused) resumeTimer()
+            }
             TsEvent.Again -> openLevel(s.level, if (s.level == 0) Levels.drill(s.mistakes, rnd) else Levels.build(s.level, rnd))
             TsEvent.NextLevel -> if (s.level in 1 until Levels.COUNT) onEvent(TsEvent.OpenLevel(s.level + 1)) else onEvent(TsEvent.OpenReview)
             is TsEvent.Lang -> {
@@ -183,7 +196,6 @@ object TsController {
             is TsEvent.SoundOn -> {
                 store?.sound = e.on
                 sound.enabled = e.on
-                if (e.on && s.inQuiz) sound.startHum()
                 TsLog.i("SOUND on=${e.on}")
                 set("sound") { it.copy(sound = e.on) }
             }
@@ -206,13 +218,11 @@ object TsController {
             TsEvent.Resume -> {
                 // the officer starts the signal again (it was frozen while away); the L6 clock continues
                 set("resume") { it.copy(paused = false, gestureEpoch = if (it.screen == Screen.QUIZ && it.phase == Phase.WATCH) it.gestureEpoch + 1 else it.gestureEpoch) }
-                if (s.inQuiz) sound.startHum()
                 resumeTimer()
             }
             is TsEvent.Background ->
                 if (e.inBackground) {
                     pauseTimer()
-                    sound.stopHum()
                     if (s.screen != Screen.STARTING) set("background") { it.copy(paused = true) }
                 }
             TsEvent.SceneReady -> if (s.screen == Screen.STARTING) set("ready") { it.copy(screen = Screen.HOME, sceneReady = true) } else set("ready") { it.copy(sceneReady = true) }
@@ -223,10 +233,50 @@ object TsController {
 
     private fun stepCount(s: TsUiState): Int = s.lessonGesture?.steps ?: 4
 
-    private fun goHome(why: String) {
+    private fun goHome(why: String) = goTo(Screen.HOME, why)
+
+    /** Leaves any level: the clock, the hum and the question go, the seat returns to the straight lane. */
+    private fun goTo(screen: Screen, why: String) {
         stopTimer()
-        sound.stopHum()
-        set(why) { it.copy(screen = Screen.HOME, dialog = Dialog.NONE, breakdown = false, phase = Phase.WATCH, demo = false, hint = false, lane = Lane.STRAIGHT, questions = emptyList(), index = 0, outcomes = emptyList()) }
+        set(why) { it.copy(screen = screen, dialog = Dialog.NONE, leaveTo = null, paused = false, breakdown = false, phase = Phase.WATCH, demo = false, hint = false, lane = Lane.STRAIGHT, questions = emptyList(), index = 0, outcomes = emptyList()) }
+    }
+
+    /** TabBar tap. During a question it asks first (S12), like [主页]; a lit tab in a sub-page goes back to its list. */
+    private fun tab(id: String) {
+        val s = _state.value
+        if (s.screen == Screen.BLOCKED) return
+        if (s.screen == Screen.QUIZ) {
+            askLeave(id)
+            return
+        }
+        tabNow(id, "tab")
+    }
+
+    /** S12: the L6 clock waits while the page is the question "leave?" (the answers are not on screen). */
+    private fun askLeave(to: String?) {
+        pauseTimer()
+        set("leave-ask") { it.copy(dialog = Dialog.LEAVE, leaveTo = to) }
+    }
+
+    private fun tabNow(id: String, why: String) =
+        goTo(
+            when (id) {
+                TAB_LESSONS -> Screen.LESSONS
+                TAB_LEVELS -> Screen.LEVELS
+                TAB_REVIEW -> Screen.REVIEW
+                TAB_SETTINGS -> Screen.SETTINGS
+                else -> Screen.HOME
+            },
+            why,
+        )
+
+    /** The window's × during a timed question: the answers are gone, so the clock waits (D41: controls follow their window). */
+    fun onWindowClosed() {
+        val s = _state.value
+        if (s.screen == Screen.QUIZ && s.timed && s.phase == Phase.WATCH && !s.paused) {
+            TsLog.i("WINDOW closed during the clock: paused")
+            onEvent(TsEvent.Background(true))
+        }
     }
 
     private fun openLevel(level: Int, questions: List<Question>) {
@@ -242,7 +292,6 @@ object TsController {
         val q = s.questions.getOrNull(i) ?: return
         stopTimer()
         countdown.floatValue = 1f
-        sound.startHum()
         val laneChanges = q.lane != s.lane && s.screen == Screen.QUIZ
         set(why) {
             it.copy(screen = Screen.QUIZ, index = i, lane = q.lane, phase = if (laneChanges) Phase.SWITCHING else Phase.WATCH, yours = null, hint = false, demo = false, breakdown = false, gestureEpoch = if (laneChanges) it.gestureEpoch else it.gestureEpoch + 1)
@@ -294,7 +343,6 @@ object TsController {
     private fun finishLevel() {
         val s = _state.value
         stopTimer()
-        sound.stopHum()
         val score = s.outcomes.count { it.ok }
         var best = s.best
         if (s.level > 0 && score >= (best[s.level] ?: -1)) {
@@ -359,17 +407,22 @@ object TsController {
         set("timeout") { it.copy(phase = Phase.TIMEOUT, yours = null) }
     }
 
+    /** D26, same order as the factory template: release, close the window and the Stage, remove the tasks, end the process. */
     private fun exit() {
-        TsLog.i("EXIT confirmed")
+        TsLog.i("EXIT confirmed: release + close window + closeStage + finishAndRemoveTask + exit")
         stopTimer()
-        sound.release()
+        WindowCtl.closeForQuit()
+        val nav = WindowCtl.navigator
         val a = activity
-        if (a != null) {
-            a.finishAndRemoveTask()
-        }
         scope.launch {
-            delay(300)
-            android.os.Process.killProcess(android.os.Process.myPid())
+            runCatching { nav?.closeStage() }.onFailure { TsLog.w("EXIT closeStage: $it") }
+            runCatching {
+                val am = a?.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager
+                am?.appTasks?.forEach { t -> runCatching { t.finishAndRemoveTask() } }
+                a?.finishAndRemoveTask()
+            }.onFailure { TsLog.w("EXIT finishAndRemoveTask: $it") }
+            delay(400)
+            kotlin.system.exitProcess(0)
         }
     }
 
@@ -402,7 +455,10 @@ object TsController {
         }
     }
 
-    fun debugPanels(show: Boolean) = set("panels") { it.copy(panelsHidden = !show) }
+    fun debugPanels(show: Boolean) {
+        set("panels") { it.copy(panelsHidden = !show) }
+        WindowCtl.suppress(!show)
+    }
 
     fun debugCam(side: Boolean) = set("cam") { it.copy(camSide = side) }
 

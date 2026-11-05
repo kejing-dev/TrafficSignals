@@ -12,6 +12,9 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import com.pico.spatial.core.container.SpatialViewContent
 import com.pico.spatial.core.ecs.DirectionalLightComponent
+import com.pico.spatial.core.ecs.ImageBasedLightSource
+import com.pico.spatial.core.ecs.LoadType
+import com.pico.spatial.core.ecs.StageEnvironmentLightingComponent
 import com.pico.spatial.core.ecs.Entity
 import com.pico.spatial.core.ecs.ModelComponent
 import com.pico.spatial.core.ecs.ModelEntity
@@ -38,6 +41,8 @@ import io.embodit.trafficsignals.domain.Judge
 import io.embodit.trafficsignals.domain.Lane
 import io.embodit.trafficsignals.domain.Move
 import io.embodit.trafficsignals.domain.Quat4
+import io.embodit.trafficsignals.domain.SeatPlacer
+import io.embodit.trafficsignals.domain.StageLayout
 import io.embodit.trafficsignals.domain.Question
 import io.embodit.trafficsignals.domain.Upright
 import io.embodit.trafficsignals.domain.Vec3
@@ -50,12 +55,12 @@ import io.embodit.trafficsignals.ui.Phase
 import io.embodit.trafficsignals.ui.Screen
 import io.embodit.trafficsignals.ui.TsEvent
 import io.embodit.trafficsignals.ui.TsUiState
+import io.embodit.trafficsignals.ui.panels.ChipSize
+import io.embodit.trafficsignals.ui.window.WindowCtl
 import java.util.Locale
 import java.util.Random
 import kotlin.math.PI
 import kotlin.math.abs
-import kotlin.math.hypot
-import kotlin.math.tan
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -78,33 +83,16 @@ class TrafficFrameSystem : System() {
     }
 }
 
+/** The only panel left on the Stage: "打开面板" / "平视前方", shown only while the system window is not there. */
 object PanelIds {
-    const val HOME = "P1"
-    const val QUIZ = "P2"
-    const val VERDICT = "P3"
-    const val LESSON = "P4"
-    const val DIALOG = "DLG"
-    val pool = listOf(HOME, QUIZ, VERDICT, LESSON, DIALOG)
-}
-
-/** Panel sizes in dp (design panels[].size at 0.0008 m/dp, so every panel is drawn at scale 1). */
-object PanelSizes {
-    const val HOME_W = 850f
-    const val HOME_H = 475f
-    const val QUIZ_W = 800f
-    const val QUIZ_H = 400f
-    const val VERDICT_W = 625f
-    const val VERDICT_H = 575f
-    const val LESSON_W = 700f
-    const val LESSON_H = 575f
-    const val DIALOG_W = 500f
-    const val DIALOG_H = 250f
+    const val OPEN = "OPEN"
+    val pool = listOf(OPEN)
 }
 
 /**
  * The 3D side (design scene, entities3d): sky, the painted crossroads with its props, parked cars, your bonnet, the
  * officer on the centre post (or on the lesson post 6 m ahead), the flow arrows of a verdict and the orientation aids.
- * Everything hangs below a driver root placed once from the head (position + yaw only, [Upright]); [回正] places it again.
+ * Everything hangs below a driver root placed from the head (position + yaw only, [SeatPlacer], [StageLayout]); [回正] places it again.
  * Per-frame work happens in [onFrame] only.
  */
 class TrafficScene(private val context: Context, private val sink: (TsEvent) -> Unit) {
@@ -155,21 +143,33 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
     // placement (design container.placement, profile D1 / D9)
     private var pose: HeadPose? = null
     private var placeEpoch = -1
-    private var placing = false
-    private var placeStartMs = 0L
-    private val placeSamples = ArrayList<Pair<Vec3, Float>>()
+    private val placer = SeatPlacer()
     private var placed = false
     private var placedAtMs = 0L
-    private var lockedAtMs = 0L
-    private var replacedOnce = false
     private var origin = Vec3.ZERO
     private var yaw0 = 0f
-    private var eyeH = EYE_H
+    private var windowEpoch = 0
     private val logAt = longArrayOf(1_000L, 3_000L, 5_000L)
     private var logIndex = 0
 
+    // lights (B24)
+    private var envLight: StageEnvironmentLightingComponent? = null
+    private var sunLight: DirectionalLightComponent? = null
+
+    // your controller rays (D41: drawn by the app, the system's is not guaranteed)
+    private val rays = ArrayList<ModelEntity>()
+    var debugRay: Pair<Vec3, Vec3>? = null
+
+    /** Debug: fake head pitch (degrees) for the level gate (the 6.1 emulator's head can't be pitched from a script). */
+    var debugPitch: Float? = null
+
+    // "打开面板" / "平视前方"
+    private var chipAt: Vec3? = null
+    private var hintShown = false
+
     // lane / fade
     private var shownLane = Lane.STRAIGHT
+    private var shownBig = false
     private var fadeDir = 0
     private var fadeT = 0f
     private var pendingLane: Lane? = null
@@ -217,11 +217,7 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
         stageRoot = root
         val rig = PanelRig(root) { id, shown -> panelShown[id] = shown }
         this.rig = rig
-        rig.world(PanelIds.HOME, PanelSizes.HOME_W, PanelSizes.HOME_H, 1f).maxPitch = 0f
-        rig.world(PanelIds.QUIZ, PanelSizes.QUIZ_W, PanelSizes.QUIZ_H, 1f).maxPitch = 0f
-        rig.world(PanelIds.VERDICT, PanelSizes.VERDICT_W, PanelSizes.VERDICT_H, 1f).maxPitch = 0f
-        rig.world(PanelIds.LESSON, PanelSizes.LESSON_W, PanelSizes.LESSON_H, 1f).maxPitch = 0f
-        rig.world(PanelIds.DIALOG, PanelSizes.DIALOG_W, PanelSizes.DIALOG_H, 1f).maxPitch = 0f
+        rig.world(PanelIds.OPEN, ChipSize.W, ChipSize.H, 1f).maxPitch = 0f
         head.start()
         stick.start()
         ActiveScene.current = this
@@ -251,13 +247,14 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
         val driver = Entity().named("driver")
         root.addChild(driver)
         this.driver = driver
+        // invisible until the first place. It stays enabled: findSkinnedMeshEntity finds nothing below a disabled parent.
         driver.setOpacity(0f)
         val inter = Entity().named("intersection")
         driver.addChild(inter)
         this.inter = inter
         frame()
         // sky dome (around the driver, inside-out sphere)
-        val skyMesh = withContext(Dispatchers.IO) { sh.keep(MeshResource.createSphere(SKY_R)) }
+        val skyMesh = withContext(Dispatchers.IO) { sh.keep(MeshResource.createSphere(SKY_R)) } // gate:allow geometry 天空穹顶：包住人四周的内翻球，只贴天空渐变，不是可见物件
         sky = model(skyMesh, m.sky, "sky", root).also { it.setLocal(scale = Vec3(-1f, 1f, 1f)) }
         frame()
         // road
@@ -280,22 +277,33 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
         val hood = withContext(Dispatchers.IO) { sh.keep(Toon(200).also { Street.hood(it, hoodColor, EYE_H) }.build("hood")) }
         hoodEntity = model(hood, m.toon, "hood", driver)
         frame()
-        // light for the officer (PBR); the street is Unlit with the sun baked into its palette
+        // light for the officer (B24): PBR under a soft city sky (IBL, tools/make_ibl.py) and one warm sun, no fill and no
+        // emission. The street is Unlit with the sun baked into its palette. v0.1.1's 5000 + 2200 lux over the default
+        // environment light burnt his shirt white (2026-11-05 headset: "交警身上光好像太白了").
+        val iblTex = runCatching { withContext(Dispatchers.IO) { TextureResource.load(IBL_ASSET, LoadType.FROM_ASSETS) } }
+            .onFailure { TsLog.e("LIGHT ibl $IBL_ASSET failed: $it") }.getOrNull()
+        if (iblTex != null) {
+            sh.keep(iblTex)
+            val env = StageEnvironmentLightingComponent(ImageBasedLightSource.Single(iblTex), IBL_EXP)
+            root.addChild(Entity().named("cityIbl").also { it.components.set(env) })
+            envLight = env
+        }
         val sun = Entity().named("sun")
-        sun.components.set(DirectionalLightComponent(Color4(1f, 0.97f, 0.92f, 1f), SUN_LUX, false))
+        val sunC = DirectionalLightComponent(Color4(1f, 0.93f, 0.82f, 1f), SUN_LUX, false)
+        sun.components.set(sunC)
+        sunLight = sunC
         driver.addChild(sun)
         sun.setLocal(rotation = Quat4.fromTo(Vec3(0f, 0f, -1f), -Palette.SUN))
-        val fill = Entity().named("fill")
-        fill.components.set(DirectionalLightComponent(Color4(0.85f, 0.9f, 1f, 1f), FILL_LUX, false))
-        driver.addChild(fill)
-        fill.setLocal(rotation = Quat4.fromTo(Vec3(0f, 0f, -1f), Vec3(0.3f, -0.5f, -0.8f).normalized()))
+        TsLog.i(lightLine())
         // officer
         val oRoot = Entity().named("officerRoot")
         driver.addChild(oRoot)
         officerRoot = oRoot
+        oRoot.setLocal(position = StageLayout.openingFeet()) // on the post from the first frame he could ever be seen in (D14)
         val clips = OfficerClips.load(context)
         val model = withContext(Dispatchers.IO) { Entity.load("asset://officer.glb") }
         oRoot.addChild(model)
+        contactShadow()
         val off = Officer(model, clips)
         off.bind()
         officer = off
@@ -334,9 +342,21 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
         repeat(4) { aidWords += model(wordMesh, m.newTextMaterial(), "aidWord$it", aids) }
         val tagMesh = withContext(Dispatchers.IO) { sh.keep(uprightQuad(1.1f, ARM_TAG_H, "armTag")) }
         repeat(2) { armTags += model(tagMesh, m.newTextMaterial(), "armTag$it", driver).also { e -> e.enabled = false } }
+        // the rays: a fading line from each controller, Stage space (not below the driver)
+        val rayMesh = withContext(Dispatchers.IO) { sh.keep(rayMesh()) }
+        val rayMat = withContext(Dispatchers.IO) { m.rayMaterial() }
+        repeat(2) { rays += model(rayMesh, rayMat, "ray$it", root).also { e -> e.enabled = false } }
         built = true
         TsLog.i("SCENE built ms=${SystemClock.elapsedRealtime() - t0}")
         render(ui)
+    }
+
+    /** Contact shadow under the officer's feet: a soft dark blob on the post top (the street is Unlit, it receives nothing). */
+    private fun contactShadow() {
+        val mats = mats ?: return
+        val mesh = shared?.keep(flatQuad(1f, 1f, "contact")) ?: return
+        val blob = model(mesh, mats.contactMaterial(), "contact", officerRoot ?: return)
+        blob.setLocal(position = Vec3(0f, 0.006f, 0f), scale = Vec3(0.95f, 1f, 0.95f))
     }
 
     fun pause() {
@@ -381,6 +401,9 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
         officer = null
         panelShown.clear()
         cars.clear()
+        rays.clear()
+        chipAt = null
+        hintShown = false
         aidWords.clear()
         armTags.clear()
         runCatching { rig?.release() }
@@ -747,6 +770,8 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
         val rig = rig ?: return
         rig.onFrame(now)
         pose?.let { rig.stowBehind(it) }
+        WindowCtl.stepGate(now, pose?.let { debugPitch ?: Math.toDegrees(it.pitch.toDouble()).toFloat() })
+        stepRays()
         checkBlocked(now)
         if (!attached || paused) return
         val state = ui
@@ -759,7 +784,7 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
                 stepStartupLog(now)
             }
         }
-        placePanels(state)
+        placeChip(now)
         if (now - lastLogMs > LOG_MS) {
             lastLogMs = now
             TsLog.i(String.format(Locale.US, "FRAME n=%d head=%s state=%s officer=%s yaw=%.0f stick=%.2f", frames, TsLog.pos(pose?.position), state.designState(), officer?.playing, Math.toDegrees(officerYaw.toDouble()), stick.x))
@@ -781,76 +806,50 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
 
     // ---------------------------------------------------------------- placement (design container.placement)
 
+    private fun sightYaw(p: HeadPose): Float = debugYaw?.let { Math.toRadians(it.toDouble()).toFloat() } ?: p.yaw(0f)
+
     private fun stepPlacement(state: TsUiState, now: Long) {
-        if (state.placeEpoch != placeEpoch && !placing) {
-            placing = true
-            placeStartMs = now
-            placeSamples.clear()
-            TsLog.i("PLACE start epoch=${state.placeEpoch}")
+        if (state.placeEpoch != placeEpoch) {
+            placeEpoch = state.placeEpoch
+            placer.request("epoch=$placeEpoch", now)
+            TsLog.i("PLACE start epoch=$placeEpoch")
         }
         val p = pose
-        if (placing) {
-            if (p != null) placeSamples += p.position to (debugYaw?.let { Math.toRadians(it.toDouble()).toFloat() } ?: p.yaw(0f))
-            val enough = now - placeStartMs >= PLACE_WINDOW_MS && placeSamples.size >= 3
-            val timedOut = now - placeStartMs >= PLACE_TIMEOUT_MS
-            if (!enough && !timedOut) return
-            placing = false
-            placeEpoch = state.placeEpoch
-            if (placeSamples.isEmpty()) {
-                // no valid head pose yet: keep the scene where it would be at the Stage origin, and try again
-                TsLog.w("PLACE no valid head pose, waiting")
-                placeEpoch = -1
-                return
-            }
-            applyPlacement(placeSamples, "epoch=${state.placeEpoch}")
-            if (!placed) {
-                placed = true
-                placedAtMs = now
-                sink(TsEvent.SceneReady)
-            }
-            lockedAtMs = now + SETTLE_MS
-            return
+        if (WindowCtl.createdEpoch != windowEpoch && p != null) {
+            windowEpoch = WindowCtl.createdEpoch
+            // the system has just put the window on the line of sight: the seat follows if you turned since (D41)
+            placer.windowOpened(now, sightYaw(p))
         }
-        // settle: during the first 2 s follow the head (tracking may still be settling), then lock
-        if (p != null && now < lockedAtMs) {
-            applyPlacement(listOf(p.position to (debugYaw?.let { Math.toRadians(it.toDouble()).toFloat() } ?: p.yaw(0f))), "settle")
-        } else if (p != null && !replacedOnce && now - placedAtMs < 10_000L) {
-            // once: the head is far from where we placed (> 70° away or > 1.5 m), place again (profile D1)
-            val eye = Upright.toStage(origin, yaw0, Vec3(0f, eyeH, 0f))
-            val off = hypot(p.position.x - eye.x, p.position.z - eye.z)
-            val turn = abs(Yaw.wrap(p.yaw(yaw0) - yaw0))
-            if (off > 1.5f || turn > Math.toRadians(70.0).toFloat()) {
-                replacedOnce = true
-                TsLog.i(String.format(Locale.US, "PLACE auto-again off=%.2f turn=%.0f", off, Math.toDegrees(turn.toDouble())))
-                applyPlacement(listOf(p.position to p.yaw(0f)), "auto-again")
-            }
-        }
-    }
-
-    private fun applyPlacement(samples: List<Pair<Vec3, Float>>, why: String) {
-        val xs = samples.map { it.first.x }.sorted()
-        val ys = samples.map { it.first.y }.sorted()
-        val zs = samples.map { it.first.z }.sorted()
-        val ref = samples.last().second
-        val yaws = samples.map { ref + Yaw.wrap(it.second - ref) }.sorted()
-        val eye = Vec3(xs[xs.size / 2], ys[ys.size / 2], zs[zs.size / 2])
-        val yaw = Yaw.wrap(yaws[yaws.size / 2])
-        val frame = Upright.frame(HeadPose(eye, Quat4.axisAngle(Vec3.UP, yaw)), EYE_H)
-        origin = frame.first
-        yaw0 = frame.second
-        eyeH = EYE_H
-        driver?.setLocal(position = origin, rotation = Quat4.axisAngle(Vec3.UP, yaw0))
-        sky?.setLocal(position = Vec3(origin.x, origin.y, origin.z))
+        val spot = placer.step(now, p?.let { it.position to sightYaw(it) }) ?: return
+        origin = Vec3(spot.eye.x, spot.eye.y - EYE_H, spot.eye.z)
+        yaw0 = spot.yaw
         updateIntersectionOffset()
-        panelsDirty = true
-        if (why != "settle") TsLog.i(String.format(Locale.US, "PLACE done %s origin=%s yaw=%.1f eye=%s samples=%d", why, TsLog.pos(origin), Math.toDegrees(yaw0.toDouble()), TsLog.pos(eye), samples.size))
+        sky?.setLocal(position = origin)
+        if (spot.why != "settle") {
+            val feet = StageLayout.officerFeet(state.screen == Screen.LESSON, shownLane.x)
+            val at = Upright.toStage(origin, StageLayout.driverYaw(yaw0, shownLane.x, shownBig), feet)
+            TsLog.i(String.format(Locale.US, "PLACE done %s origin=%s sightYaw=%.1f seat=%.1f eye=%s officer=%s dHead=%.2f gapDeg=%.1f", spot.why, TsLog.pos(origin), Math.toDegrees(yaw0.toDouble()), Math.toDegrees(StageLayout.seatYaw(shownLane.x, shownBig).toDouble()), TsLog.pos(spot.eye), TsLog.pos(at), (at + Vec3(0f, OFFICER_H / 2, 0f) - spot.eye).length, StageLayout.windowGapDeg(feet, shownLane.x, shownBig)))
+        }
+        if (spot.jump) {
+            // a visible jump (recenter, window reopened elsewhere): the same short fade as a lane change
+            fadeT = 0f
+            fadeDir = 1
+            driver?.setOpacity(0f)
+        }
+        if (!placed) {
+            placed = true
+            placedAtMs = now
+            sink(TsEvent.SceneReady)
+        }
     }
 
     /** Your lane puts the junction centre at (-(laneX - 0.4), 0, -14) in the driver frame (design scene.intersection.you). */
-    private fun interOffset(lane: Lane): Vec3 = Vec3(-(lane.x - EYE_LEFT_OF_LANE), 0f, -EYE_TO_CENTRE)
+    private fun interOffset(lane: Lane): Vec3 = StageLayout.junctionLocal(lane.x)
 
+    /** Seat for the shown lane: the eye on the turning axis, the officer [StageLayout.OFFICER_LEFT_DEG] left of the window (D41). */
     private fun updateIntersectionOffset() {
         inter?.setLocal(position = interOffset(shownLane))
+        driver?.setLocal(position = origin, rotation = Quat4.axisAngle(Vec3.UP, StageLayout.driverYaw(yaw0, shownLane.x, shownBig)))
     }
 
     private fun stepStartupLog(now: Long) {
@@ -877,7 +876,7 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
         val d = driver ?: return
         if (fadeT < 1f && fadeDir == 0 && pendingLane == null) fadeDir = 1 // first appearance
         val want = ui.lane.takeIf { ui.screen == Screen.QUIZ || ui.screen == Screen.INTRO } ?: Lane.STRAIGHT
-        if (want != shownLane && fadeDir == 0) {
+        if ((want != shownLane || ui.big != shownBig) && fadeDir == 0) {
             pendingLane = want
             fadeDir = -1
         }
@@ -887,6 +886,7 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
         if (fadeDir < 0 && fadeT <= 0f) {
             pendingLane?.let { shownLane = it }
             pendingLane = null
+            shownBig = ui.big
             updateIntersectionOffset()
             fadeDir = 1
         } else if (fadeDir > 0 && fadeT >= 1f) {
@@ -903,8 +903,8 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
         val off = officer ?: return
         val lesson = state.screen == Screen.LESSON || state.breakdown
         val q = state.question
-        // where: lesson post 6 m ahead, else the centre post
-        val pos = if (state.screen == Screen.LESSON) LESSON_SPOT + Vec3(0f, Street.POST_H, 0f) else interOffset(shownLane) + Vec3(0f, Street.POST_H, 0f)
+        // where: the lesson post 6 m out, else the centre post; never anywhere else (D14)
+        val pos = StageLayout.officerFeet(state.screen == Screen.LESSON, shownLane.x)
         // which way
         val facing: Facing =
             when {
@@ -1009,69 +1009,69 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
         }
     }
 
-    // ---------------------------------------------------------------- panels (design panels[].position)
+    // ---------------------------------------------------------------- the Stage chip (native-window-move §3.3, §7.9)
 
-    private var panelsDirty = true
-    private var panelKey = ""
-
-    private fun placePanels(state: TsUiState) {
+    private fun placeChip(now: Long) {
         val rig = rig ?: return
-        if (!placed) {
-            // starting: show P1 (loading) at the default spot in front of the Stage origin until the head is known
-            if (state.screen == Screen.STARTING && pose != null && !rig[PanelIds.HOME]!!.shown) {
-                val p = pose!!
-                val frame = Upright.frame(p, EYE_H)
-                val at = Upright.toStage(frame.first, frame.second, homeLocal())
-                rig.faceViewer(p.position)
-                rig[PanelIds.HOME]?.show(at)
-            }
+        val slot = rig[PanelIds.OPEN] ?: return
+        val p = pose
+        if (WindowCtl.levelHint && p != null) {
+            // on the line of sight so it is seen whatever the pitch (clamped), upright (D9), re-posed every frame
+            chipAt = null
+            val pitch = (debugPitch ?: Math.toDegrees(p.pitch.toDouble()).toFloat()).coerceIn(-40f, 40f)
+            val at = StageLayout.chipAt(p.position, p.yaw(0f), 0.75f, -pitch)
+            rig.faceViewer(p.position)
+            if (slot.shown) slot.moveTo(at) else slot.show(at)
+            if (!hintShown) TsLog.i("LEVEL hint show at=${TsLog.pos(at)}")
+            hintShown = true
             return
         }
-        val hidden = state.panelsHidden
-        val showHome = !hidden && state.screen in setOf(Screen.STARTING, Screen.HOME, Screen.LESSONS, Screen.LEVELS, Screen.REVIEW, Screen.SETTINGS)
-        val showQuiz = !hidden && state.screen in setOf(Screen.INTRO, Screen.QUIZ, Screen.RESULT)
-        val showVerdict = !hidden && state.judged && !state.breakdown
-        val showLesson = !hidden && (state.screen == Screen.LESSON || (state.screen == Screen.QUIZ && state.breakdown))
-        val showDialog = !hidden && (state.dialog != Dialog.NONE || state.screen == Screen.BLOCKED)
-        val key = "$showHome$showQuiz$showVerdict$showLesson$showDialog${state.screen}${state.breakdown}"
-        if (!panelsDirty && key == panelKey) return
-        panelsDirty = false
-        panelKey = key
-        val eye = Upright.toStage(origin, yaw0, Vec3(0f, eyeH, 0f))
-        rig.faceViewer(eye) // once per placement / change: the panels turn to the eye then stay (profile D21)
-        fun at(local: Vec3) = Upright.toStage(origin, yaw0, local)
-        place(PanelIds.HOME, showHome, at(homeLocal()))
-        place(PanelIds.QUIZ, showQuiz, at(quizLocal()))
-        place(PanelIds.VERDICT, showVerdict, at(verdictLocal()))
-        place(PanelIds.LESSON, showLesson, at(if (state.screen == Screen.LESSON) lessonLocal() else verdictLocal()))
-        val behind = if (showQuiz) quizLocal() else homeLocal()
-        place(PanelIds.DIALOG, showDialog, at(behind + Vec3(0f, 0.02f, 0.08f)))
+        if (hintShown) {
+            hintShown = false
+            slot.hide()
+        }
+        if (WindowCtl.chipWanted(now) && p != null && ui.screen != Screen.STARTING) {
+            // posed from the head when it appears, below the sight line; again if it has left your view
+            var at = chipAt
+            if (at != null) {
+                val off = Yaw.wrap(Yaw.of(at - p.position) - p.yaw(0f))
+                if (abs(off) > CHIP_REPOSE_RAD) at = null
+            }
+            if (at == null) {
+                at = StageLayout.chipAt(p.position, p.yaw(0f), 1.0f, 16f)
+                chipAt = at
+                rig.faceViewer(p.position)
+                if (slot.shown) slot.moveTo(at) else slot.show(at)
+                TsLog.i("CHIP show at=${TsLog.pos(at)} window=${WindowCtl.panelState}")
+            }
+        } else if (chipAt != null) {
+            chipAt = null
+            slot.hide()
+        }
     }
 
-    private fun place(id: String, show: Boolean, at: Vec3) {
-        val slot = rig?.get(id) ?: return
-        if (show) slot.show(at) else slot.hide()
+    // ---------------------------------------------------------------- your controller rays (profile D41)
+
+    private fun stepRays() {
+        if (rays.isEmpty()) return
+        val poses = debugRay?.let { listOf(it) } ?: stick.rays()
+        rays.forEachIndexed { i, e ->
+            val r = poses.getOrNull(i)
+            e.enabled = r != null
+            if (r != null) e.setLocal(position = r.first, rotation = Quat4.fromTo(Vec3(0f, 0f, -1f), r.second))
+        }
     }
 
-    /** Fold a panel's centre into the driver frame: [dist] horizontal metres, [yawDeg] (+ right), top edge [topDeg] below the eye. */
-    private fun panelLocal(dist: Float, yawDeg: Float, topDeg: Float, heightM: Float): Vec3 {
-        val a = Math.toRadians(yawDeg.toDouble())
-        val top = eyeH - dist * tan(Math.toRadians(topDeg.toDouble())).toFloat()
-        val y = top - heightM / 2
-        return Vec3((dist * kotlin.math.sin(a)).toFloat(), y, (-dist * kotlin.math.cos(a)).toFloat())
-    }
+    // ---------------------------------------------------------------- lights (debug `light`)
 
-    private fun homeLocal() = panelLocal(PANEL_DIST, 0f, PANEL_TOP_DEG, PanelSizes.HOME_H * DP_M)
+    fun lightLine(): String = String.format(Locale.US, "LIGHT ibl=%s exp=%.1f sun=%.0f lux", envLight != null, envLight?.intensityExponent ?: 0f, sunLight?.intensity ?: 0f)
 
-    private fun quizLocal() = panelLocal(PANEL_DIST, 0f, PANEL_TOP_DEG, PanelSizes.QUIZ_H * DP_M)
-
-    private fun verdictLocal() = panelLocal(PANEL_DIST, VERDICT_YAW, PANEL_TOP_DEG, PanelSizes.VERDICT_H * DP_M)
-
-    /** P4: centre 30° right, 8° below the eye (design panels P4). */
-    private fun lessonLocal(): Vec3 {
-        val a = Math.toRadians(LESSON_YAW.toDouble())
-        val y = eyeH - PANEL_DIST * tan(Math.toRadians(8.0)).toFloat()
-        return Vec3((PANEL_DIST * kotlin.math.sin(a)).toFloat(), y, (-PANEL_DIST * kotlin.math.cos(a)).toFloat())
+    fun debugLight(what: String, arg: String): String {
+        when (what) {
+            "ibl" -> arg.toFloatOrNull()?.let { envLight?.intensityExponent = it.coerceIn(-24f, 24f) }
+            "sun" -> arg.toFloatOrNull()?.let { sunLight?.intensity = it.coerceAtLeast(0f) }
+        }
+        return lightLine().also { TsLog.i(it) }
     }
 
     // ---------------------------------------------------------------- debug
@@ -1085,6 +1085,7 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
         cars.forEachIndexed { i, c -> out += "INSTANCE car$i enabled=${c.e.enabled} approach=${c.approach} laneX=${c.laneX} heightM=1.45 opacityComponent=${c.e.hasOpacityComponent()} transparent=no" }
         out += "INSTANCE ghost enabled=${ghost?.enabled} transparent=yes(intended)"
         out += "INSTANCE driver opacityComponent=${driver?.hasOpacityComponent()}"
+        out += "WINDOW state=${WindowCtl.panelState} open=${WindowCtl.open} ${lightLine()}"
         rig?.dump()?.let { out += it }
         return out
     }
@@ -1140,6 +1141,47 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
                 }
             )
 
+        /** The ray: white fading out along its length (mesh V 0 at the controller, 1 at the far end). */
+        fun rayMaterial(): UnlitMaterial {
+            val bmp = Bitmap.createBitmap(4, 64, Bitmap.Config.ARGB_8888)
+            for (y in 0 until 64) {
+                val a = (230f * (1f - y / 63f)).toInt()
+                val c = (a shl 24) or 0xFFFFFF
+                for (x in 0 until 4) bmp.setPixel(x, y, c)
+            }
+            return sh.keep(
+                UnlitMaterial.create(BlendingMode.TRANSPARENT).apply {
+                    setBaseColor(Color4(1f, 1f, 1f, 1f))
+                    setBaseColorTexture(sh.keep(TextureResource.create(flipV(bmp))))
+                    runCatching { setApplyToneMapping(false) }
+                    setCullingMode(MaterialCullingMode.NONE)
+                    setDepthWrite(false)
+                }
+            )
+        }
+
+        /** The contact shadow: a soft radial dark blob. */
+        fun contactMaterial(): UnlitMaterial {
+            val n = 128
+            val bmp = Bitmap.createBitmap(n, n, Bitmap.Config.ARGB_8888)
+            for (y in 0 until n) for (x in 0 until n) {
+                val dx = (x + 0.5f) / n * 2 - 1
+                val dy = (y + 0.5f) / n * 2 - 1
+                val r = kotlin.math.sqrt(dx * dx + dy * dy).coerceAtMost(1f)
+                val k = 1f - r
+                bmp.setPixel(x, y, ((220f * minOf(1f, k * 1.6f) * minOf(1f, k * 1.6f)).toInt() shl 24) or 0x101418)
+            }
+            return sh.keep(
+                UnlitMaterial.create(BlendingMode.TRANSPARENT).apply {
+                    setBaseColor(Color4(1f, 1f, 1f, 1f))
+                    setBaseColorTexture(sh.keep(TextureResource.create(bmp)))
+                    runCatching { setApplyToneMapping(false) }
+                    setCullingMode(MaterialCullingMode.NONE)
+                    setDepthWrite(false)
+                }
+            )
+        }
+
         fun makeText(text: String, w: Int, h: Int, ink: Int, bg: Int): TextureResource {
             val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
             val c = Canvas(bmp)
@@ -1170,13 +1212,17 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
     }
 
     companion object {
-        const val EYE_H = 1.2f
-        const val EYE_TO_CENTRE = 14.0f
-        const val EYE_LEFT_OF_LANE = 0.4f
-        val LESSON_SPOT = Vec3(0f, 0f, -6f)
+        const val EYE_H = StageLayout.EYE_H
+        const val EYE_TO_CENTRE = StageLayout.EYE_TO_CENTRE
+        const val EYE_LEFT_OF_LANE = StageLayout.EYE_LEFT_OF_LANE
+        val LESSON_SPOT = StageLayout.LESSON_SPOT
         const val SKY_R = 260f
-        const val SUN_LUX = 5000f
-        const val FILL_LUX = 2200f
+        const val IBL_ASSET = "ibl/city_ibl.ktx"
+        /** Tuned with `light ...` on emulator-5554: no large area of his shirt over 245 in the close-up (B24, build/ui-audit). */
+        const val IBL_EXP = 9f
+        const val SUN_LUX = 3000f
+        const val RAY_LEN = 2.6f
+        val CHIP_REPOSE_RAD = Math.toRadians(60.0).toFloat()
         const val CAR_POOL = 10
         const val CAR_FIRST = 15.5f
         const val LIFT = 0.025f
@@ -1185,7 +1231,7 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
         const val GHOST_OPACITY = 0.35f
         const val WORD_H = 0.7f
         const val ARM_TAG_H = 0.34f
-        const val OFFICER_H = 1.75f
+        const val OFFICER_H = StageLayout.OFFICER_H
         const val GHOST_HALF_LEN = 2.3f
         const val DRIVE_MS = 3000L
         const val FADE_S = 0.25f
@@ -1193,13 +1239,6 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
         const val FREEZE_FRAMES = 8
         const val STICK_DEAD = 0.15f
         val STICK_RATE = Math.toRadians(60.0).toFloat()
-        const val PANEL_DIST = 0.95f
-        const val PANEL_TOP_DEG = 6.5f
-        const val VERDICT_YAW = 36f
-        const val LESSON_YAW = 30f
-        const val PLACE_WINDOW_MS = 500L
-        const val PLACE_TIMEOUT_MS = 4_000L
-        const val SETTLE_MS = 2_000L
         const val BLOCK_AFTER_MS = 4_000L
         const val LOG_MS = 5_000L
 
@@ -1214,6 +1253,17 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
                 b.vertex(Vec3(-w / 2, 0f, -h / 2), n, Vector2(0f, 0f)),
             )
             return b.build(name)
+        }
+
+        /** The ray: two crossed thin quads from the origin along -Z, [RAY_LEN] long, V 0 at the origin. */
+        fun rayMesh(): MeshResource {
+            val b = MeshBuilder(8)
+            val w = 0.0035f
+            val n = Vec3(0f, 1f, 0f)
+            fun v(x: Float, y: Float, z: Float, u: Float, t: Float) = b.vertex(Vec3(x, y, z), n, Vector2(u, t))
+            b.quad(v(-w, 0f, 0f, 0f, 0f), v(w, 0f, 0f, 1f, 0f), v(w, 0f, -RAY_LEN, 1f, 1f), v(-w, 0f, -RAY_LEN, 0f, 1f))
+            b.quad(v(0f, -w, 0f, 0f, 0f), v(0f, w, 0f, 1f, 0f), v(0f, w, -RAY_LEN, 1f, 1f), v(0f, -w, -RAY_LEN, 0f, 1f))
+            return b.build("ray")
         }
 
         /** An upright quad facing +Z (towards the viewer once turned), [w] × [h] m. */

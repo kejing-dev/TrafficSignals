@@ -89,7 +89,7 @@ internal fun Typography.withFamily(family: FontFamily): Typography {
 }
 
 
-/** Type roles of the design (`typography.roles`): 24 / 18 / 15 / 14 sp at 0.95 m. */
+/** Type roles of the design (`typography.roles`): 24 / 18 / 15 / 14 sp (the system window draws 1 dp as 1.73 mm at 1.75 m: 15 sp is 0.85°, the 0.95 m panels had 0.72°). */
 object TsType {
     val headline: TextStyle
         @Composable get() = PicoTheme.typography.headlineSmall.copy(fontSize = 24.sp, lineHeight = 32.sp, fontWeight = FontWeight.SemiBold)

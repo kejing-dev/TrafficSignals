@@ -24,6 +24,8 @@ data class Outcome(val question: Question, val yours: Answer?, val correct: Answ
 data class TsUiState(
     val screen: Screen = Screen.STARTING,
     val dialog: Dialog = Dialog.NONE,
+    /** The TabBar item tapped during a question: where [离开] goes (null = home). */
+    val leaveTo: String? = null,
     val paused: Boolean = false,
     val zh: Boolean = true,
     val sound: Boolean = true,

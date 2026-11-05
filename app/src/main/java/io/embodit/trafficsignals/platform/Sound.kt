@@ -8,18 +8,14 @@ import kotlin.math.exp
 import kotlin.math.sin
 
 /**
- * Tiny synthesized sounds (design `audio`): a soft "ding" for right, a low "doo" for wrong, a car pulling away, and a
- * very quiet traffic hum while a level runs. Default volume 40 %; the mute switch (P1 / P2 top row) stops everything.
+ * Tiny synthesized sounds (design `audio`): a soft "ding" for right, a low "doo" for wrong, and a car pulling away:
+ * only sounds that answer something you or the cars did. No looping traffic hum since v0.1.2 (profile B24). Default volume
+ * 40 %; the mute switch stops everything.
  * No whistle (the gestures have none). Peaks stay below -6 dBFS.
  */
 class Sound {
     private val rate = 22050
-    private var hum: AudioTrack? = null
     var enabled = true
-        set(v) {
-            field = v
-            if (!v) stopHum()
-        }
 
     private fun pcm(seconds: Float, gen: (t: Float) -> Float): ShortArray {
         val n = (rate * seconds).toInt()
@@ -56,43 +52,18 @@ class Sound {
         }
     }
 
+    /** Builds the three samples off the main thread (they were lazy on the first answer's frame, build prompt 2026-11-05). */
+    fun warm() {
+        val t0 = android.os.SystemClock.elapsedRealtime()
+        val n = ding.size + doo.size + engine.size
+        TsLog.i("SOUND warm samples=$n ms=${android.os.SystemClock.elapsedRealtime() - t0}")
+    }
+
     fun right() = play(ding)
 
     fun wrong() = play(doo)
 
     fun carsGo() = play(engine)
-
-    /** A quiet looping hum of distant traffic (brown-ish noise, ~-30 dBFS). */
-    fun startHum() {
-        if (!enabled || hum != null) return
-        runCatching {
-            var last = 0f
-            val rnd = java.util.Random(3)
-            val data = pcm(2f) { t ->
-                last = (last + (rnd.nextFloat() * 2 - 1) * 0.02f) * 0.995f
-                val fade = minOf(1f, t / 0.05f, (2f - t) / 0.05f)
-                last * 0.9f * fade
-            }
-            val track =
-                AudioTrack.Builder()
-                    .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_GAME).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
-                    .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(rate).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
-                    .setBufferSizeInBytes(data.size * 2)
-                    .setTransferMode(AudioTrack.MODE_STATIC)
-                    .build()
-            track.write(data, 0, data.size)
-            track.setLoopPoints(0, data.size, -1)
-            track.play()
-            hum = track
-        }.onFailure { TsLog.w("SOUND hum failed: $it") }
-    }
-
-    fun stopHum() {
-        hum?.let { runCatching { it.stop(); it.release() } }
-        hum = null
-    }
-
-    fun release() = stopHum()
 
     companion object {
         /** Design default volume 40 %. */

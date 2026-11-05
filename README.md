@@ -63,7 +63,7 @@ Emulator QA round 2 passed all three gates (no Material components; install + la
 
 ### Development
 
-Kotlin · PICO Spatial SDK 6.1.9 · Full Space Stage (`STAGE_FULL`) with attachment panels P1–P4 and a dialog. See [AGENTS.md](AGENTS.md) for structure, the officer asset pipeline, debug broadcasts, the contrast gate and the QA screenshot list. Judging, levels and placement are plain Kotlin with JVM tests (`tools/dev.sh test`).
+Kotlin · PICO Spatial SDK 6.1.9 · Full Space Stage (`STAGE_FULL`) with one system Planar window and the native TabBar for all 2D UI. See [AGENTS.md](AGENTS.md) for structure, the officer asset pipeline, debug broadcasts, the contrast gate and the QA screenshot list. Judging, levels and placement are plain Kotlin with JVM tests (`tools/dev.sh test`).
 
 ### Credits
 
@@ -132,7 +132,7 @@ APK 在 [Release v0.1.1](https://github.com/kejing-dev/TrafficSignals/releases/t
 
 ### 开发
 
-Kotlin · PICO Spatial SDK 6.1.9 · Full Space Stage（`STAGE_FULL`）加 P1–P4 附着面板和对话框。结构、交警资源管线、调试广播、对比度门禁、QA 截图清单见 [AGENTS.md](AGENTS.md)。判题、关卡和摆放是纯 Kotlin，带 JVM 单测（`tools/dev.sh test`）。
+Kotlin · PICO Spatial SDK 6.1.9 · Full Space Stage（`STAGE_FULL`）加一个系统 Planar 窗口和原生 TabBar，2D 内容都在窗口里。结构、交警资源管线、调试广播、对比度门禁、QA 截图清单见 [AGENTS.md](AGENTS.md)。判题、关卡和摆放是纯 Kotlin，带 JVM 单测（`tools/dev.sh test`）。
 
 ### 致谢与许可
 

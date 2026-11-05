@@ -72,6 +72,7 @@ FIXED = [
     ("ink / alert #FFC233", "(not used for text; countdown bar colour only) listed for completeness", INK, ALERT, 4.5),
     ("white / board #CC1D4E89 over sky", "3D orientation boards HIS FRONT / BACK / LEFT / RIGHT (worst backdrop: sky)", (255, 255, 255), over("#CC1D4E89", SKY), 4.5),
     ("white / board #CC1D4E89 over asphalt", "3D orientation boards on the road", (255, 255, 255), over("#CC1D4E89", ASPHALT), 4.5),
+    ("lane white / ink 85 % over sky", "Stage hint 平视前方 (worst backdrop: sky)", hexrgb("#F2F2EE"), over("#D9111418", SKY), 4.5),
     ("#1B1B1B / vest tag #F2C6F432 over sky", "3D tag his LEFT hand", hexrgb("#1B1B1B"), over("#F2C6F432", SKY), 4.5),
     ("#1B1B1B / white tag #F2FFFFFF over asphalt", "3D tag his RIGHT hand (worst backdrop: asphalt)", hexrgb("#1B1B1B"), over("#F2FFFFFF", ASPHALT), 4.5),
 ]

@@ -15,13 +15,15 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pico.spatial.ui.foundation.dsl.registerSystem
 import com.pico.spatial.ui.foundation.dsl.unregisterSystem
+import com.pico.spatial.ui.platform.containers.LocalSpatialNavigator
 import io.embodit.trafficsignals.platform.TsLog
 import io.embodit.trafficsignals.ui.debug.Probe
 import io.embodit.trafficsignals.ui.panels.TsStage
 import io.embodit.trafficsignals.ui.scene.TrafficFrameSystem
 import io.embodit.trafficsignals.ui.scene.TrafficScene
+import io.embodit.trafficsignals.ui.window.WindowCtl
 
-/** The one screen: wires [TsController] (state), [TrafficScene] (entities, per-frame work) and [TsStage] (panels). */
+/** The Stage: wires [TsController] (state), [TrafficScene] (entities, per-frame work) and opens the system window. */
 @Composable
 fun TsScreen() {
     val context = LocalContext.current
@@ -59,11 +61,19 @@ fun TsScreen() {
             Probe.host = null
             unregisterSystem<TrafficFrameSystem>()
             scene.detach()
-            TsController.sound.stopHum()
             TsLog.i("STAGE disposed")
         }
     }
 
+    // the main window: opened when the Stage comes up (once the head is level); [回正] closes and re-opens it
+    val navigator = LocalSpatialNavigator.current
+    DisposableEffect(navigator) {
+        WindowCtl.navigator = navigator
+        onDispose { if (WindowCtl.navigator === navigator) WindowCtl.navigator = null }
+    }
+    LaunchedEffect(Unit) { WindowCtl.openWindow("stage") }
+    LaunchedEffect(state.placeEpoch) { if (state.placeEpoch > 0) WindowCtl.recall("recenter ${state.placeEpoch}") }
+
     LaunchedEffect(scene, state) { scene.render(state) }
-    TsStage(state = state, scene = scene, onEvent = TsController::onEvent)
+    TsStage(state = state, scene = scene)
 }
