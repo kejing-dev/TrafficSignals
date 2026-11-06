@@ -19,7 +19,7 @@ c 'step 1'; shot S4_P4
 c 'lesson 0'; shot S3_lesson0
 c 'panels 0'; c 'yaw -40'; c 'recenter'; c 'lesson 2 step 2'; shot S4_officer_front
 c 'stick 1'; sleep 3; c 'stick off'; shot S4_stick_turned
-c 'yaw off'; c 'recenter'; c 'panels 1'; c 'level 4'; shot S5
+c 'yaw off'; c 'recenter'; c 'panels 1'; sleep 8; c 'level 4'; shot S5
 c 'q straight,EAST,STRAIGHT'; sleep 4; shot S6
 c 'answer go'; shot S7_P3
 c 'switchLane'; sleep 6; shot S9_lane_switched

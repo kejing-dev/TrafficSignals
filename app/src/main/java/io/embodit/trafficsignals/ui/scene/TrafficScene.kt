@@ -24,6 +24,7 @@ import com.pico.spatial.core.ecs.TransformComponent
 import com.pico.spatial.core.ecs.resource.BlendingMode
 import com.pico.spatial.core.ecs.resource.MaterialCullingMode
 import com.pico.spatial.core.ecs.resource.MeshResource
+import com.pico.spatial.core.ecs.resource.PhysicallyBasedMaterial
 import com.pico.spatial.core.ecs.resource.TextureResource
 import com.pico.spatial.core.ecs.resource.UnlitMaterial
 import com.pico.spatial.core.math.Color4
@@ -170,6 +171,8 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
     // lane / fade
     private var shownLane = Lane.STRAIGHT
     private var shownBig = false
+    private var shownNear = false
+    private var officerHeld = false
     private var fadeDir = 0
     private var fadeT = 0f
     private var pendingLane: Lane? = null
@@ -270,12 +273,14 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
         // lesson post 6 m ahead, your bonnet
         val lp = withContext(Dispatchers.IO) { sh.keep(Toon(400).also { Street.lessonPost(it) }.build("lessonPost")) }
         lessonPost = model(lp, m.toon, "lessonPost", driver).also {
-            it.setLocal(position = LESSON_SPOT)
+            it.setLocal(position = StageLayout.lessonSpot(Lane.STRAIGHT.x))
             it.enabled = false
         }
         val hoodColor = Palette.HOODS[Random().nextInt(Palette.HOODS.size)]
-        val hood = withContext(Dispatchers.IO) { sh.keep(Toon(200).also { Street.hood(it, hoodColor, EYE_H) }.build("hood")) }
-        hoodEntity = model(hood, m.toon, "hood", driver)
+        val hood = withContext(Dispatchers.IO) { sh.keep(MeshBuilder(1500).also { CarKit.ownCar(it, hoodColor) }.build("ownCar")) }
+        hoodEntity = model(hood, m.paint, "ownCar", driver)
+        val cockpit = withContext(Dispatchers.IO) { sh.keep(MeshBuilder(300).also { CarKit.ownCockpit(it) }.build("ownCockpit")) }
+        model(cockpit, m.toon, "ownCockpit", driver)
         frame()
         // light for the officer (B24): PBR under a soft city sky (IBL, tools/make_ibl.py) and one warm sun, no fill and no
         // emission. The street is Unlit with the sun baked into its palette. v0.1.1's 5000 + 2200 lux over the default
@@ -311,10 +316,10 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
         frame()
         // cars: one mesh per colour (shared by the pool), plus the ghost
         withContext(Dispatchers.IO) {
-            for (c in Palette.CARS) carMeshes[c] = sh.keep(Toon(600).also { Street.car(it, c) }.build("car$c"))
+            for (c in Palette.CARS) carMeshes[c] = sh.keep(MeshBuilder(1500).also { CarKit.car(it, c) }.build("car$c"))
         }
         repeat(CAR_POOL) { i ->
-            val e = model(carMeshes[Palette.CARS[i % Palette.CARS.size]]!!, m.toon, "car$i", inter)
+            val e = model(carMeshes[Palette.CARS[i % Palette.CARS.size]]!!, m.paint, "car$i", inter)
             e.enabled = false
             cars += Car(e)
         }
@@ -429,7 +434,7 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
         val before = ui
         ui = state
         if (!built) return
-        lessonPost?.enabled = state.screen == Screen.LESSON
+        if (state.breakdown) ghost?.enabled = false // the near post stands on its route
         if (state.zh != aidsLang) paintAids(state.zh)
         // a new question: fresh cars, flows hidden, your route in interaction blue
         val q = state.question
@@ -705,7 +710,7 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
         // small boards standing on the road around him (flat paint is unreadable from 14 m), turned to you, never mirrored
         val eye = Vec3(0f, EYE_H, 0f)
         // at the post (14 m) the boards are full size; on the lesson post (6 m) they shrink and keep out of your way
-        val near = ui.screen == Screen.LESSON
+        val near = shownNear
         val r = if (near) 1.25f else 2.2f
         val ks = if (near) 0.42f else 1f
         val k = if (ui.big) 1.5f else 1f
@@ -826,7 +831,7 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
         updateIntersectionOffset()
         sky?.setLocal(position = origin)
         if (spot.why != "settle") {
-            val feet = StageLayout.officerFeet(state.screen == Screen.LESSON, shownLane.x)
+            val feet = StageLayout.officerFeet(shownNear, shownLane.x)
             val at = Upright.toStage(origin, StageLayout.driverYaw(yaw0, shownLane.x, shownBig), feet)
             TsLog.i(String.format(Locale.US, "PLACE done %s origin=%s sightYaw=%.1f seat=%.1f eye=%s officer=%s dHead=%.2f gapDeg=%.1f", spot.why, TsLog.pos(origin), Math.toDegrees(yaw0.toDouble()), Math.toDegrees(StageLayout.seatYaw(shownLane.x, shownBig).toDouble()), TsLog.pos(spot.eye), TsLog.pos(at), (at + Vec3(0f, OFFICER_H / 2, 0f) - spot.eye).length, StageLayout.windowGapDeg(feet, shownLane.x, shownBig)))
         }
@@ -849,6 +854,8 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
     /** Seat for the shown lane: the eye on the turning axis, the officer [StageLayout.OFFICER_LEFT_DEG] left of the window (D41). */
     private fun updateIntersectionOffset() {
         inter?.setLocal(position = interOffset(shownLane))
+        lessonPost?.setLocal(position = StageLayout.lessonSpot(shownLane.x))
+        lessonPost?.enabled = shownNear
         driver?.setLocal(position = origin, rotation = Quat4.axisAngle(Vec3.UP, StageLayout.driverYaw(yaw0, shownLane.x, shownBig)))
     }
 
@@ -876,7 +883,7 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
         val d = driver ?: return
         if (fadeT < 1f && fadeDir == 0 && pendingLane == null) fadeDir = 1 // first appearance
         val want = ui.lane.takeIf { ui.screen == Screen.QUIZ || ui.screen == Screen.INTRO } ?: Lane.STRAIGHT
-        if ((want != shownLane || ui.big != shownBig) && fadeDir == 0) {
+        if ((want != shownLane || ui.big != shownBig || ui.officerNear != shownNear) && fadeDir == 0) {
             pendingLane = want
             fadeDir = -1
         }
@@ -887,6 +894,7 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
             pendingLane?.let { shownLane = it }
             pendingLane = null
             shownBig = ui.big
+            shownNear = ui.officerNear
             updateIntersectionOffset()
             fadeDir = 1
         } else if (fadeDir > 0 && fadeT >= 1f) {
@@ -901,10 +909,18 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
     private fun stepOfficer(state: TsUiState, dt: Float, now: Long) {
         val oRoot = officerRoot ?: return
         val off = officer ?: return
+        // "leave?" on top of a question: the signal stops where it is and carries on after [keep going] (q3-2)
+        val hold = state.screen == Screen.QUIZ && state.dialog != Dialog.NONE
+        if (hold != officerHeld) {
+            officerHeld = hold
+            if (hold) off.hold(now) else off.unhold(now)
+            TsLog.i("GESTURE ${if (hold) "hold" else "carry on"} playing=${off.playing}")
+        }
+        if (hold) return
         val lesson = state.screen == Screen.LESSON || state.breakdown
         val q = state.question
-        // where: the lesson post 6 m out, else the centre post; never anywhere else (D14)
-        val pos = StageLayout.officerFeet(state.screen == Screen.LESSON, shownLane.x)
+        // where: the near post 6 m out, else the centre post; never anywhere else (D14)
+        val pos = StageLayout.officerFeet(shownNear, shownLane.x)
         // which way
         val facing: Facing =
             when {
@@ -1100,6 +1116,18 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
     private class Mats(private val sh: SharedResources) {
         private val atlas = sh.keep(TextureResource.create(flipV(Palette.atlas())))
         val toon: UnlitMaterial = unlit(atlas)
+
+        /** Cars, yours and the others: the atlas's flat colours as base colour under the same IBL + sun as the officer (B24, q3-6). */
+        val paint: PhysicallyBasedMaterial =
+            sh.keep(
+                PhysicallyBasedMaterial.create(BlendingMode.OPAQUE).apply {
+                    setBaseColor(Color4(1f, 1f, 1f, 1f))
+                    setBaseColorTexture(atlas)
+                    setMetallic(0f)
+                    setRoughness(0.42f)
+                    setCullingMode(MaterialCullingMode.NONE)
+                }
+            )
         val ground: UnlitMaterial = unlit(sh.keep(TextureResource.create(flipV(Street.groundTexture()))))
         val sky: UnlitMaterial = unlit(sh.keep(TextureResource.create(flipV(Street.skyTexture()))))
         val flowGo: UnlitMaterial = sheer(UiColors.PASSABLE, 0.85f)
@@ -1215,7 +1243,6 @@ class TrafficScene(private val context: Context, private val sink: (TsEvent) -> 
         const val EYE_H = StageLayout.EYE_H
         const val EYE_TO_CENTRE = StageLayout.EYE_TO_CENTRE
         const val EYE_LEFT_OF_LANE = StageLayout.EYE_LEFT_OF_LANE
-        val LESSON_SPOT = StageLayout.LESSON_SPOT
         const val SKY_R = 260f
         const val IBL_ASSET = "ibl/city_ibl.ktx"
         /** Tuned with `light ...` on emulator-5554: no large area of his shirt over 245 in the close-up (B24, build/ui-audit). */

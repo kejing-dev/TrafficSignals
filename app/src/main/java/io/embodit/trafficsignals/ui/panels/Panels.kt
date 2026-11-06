@@ -55,6 +55,8 @@ import com.pico.spatial.ui.design.PicoTheme
 import com.pico.spatial.ui.design.SegmentControl
 import com.pico.spatial.ui.design.SegmentControlDefaults
 import com.pico.spatial.ui.design.SegmentItem
+import com.pico.spatial.ui.design.Slider
+import com.pico.spatial.ui.design.SliderDefaults
 import com.pico.spatial.ui.design.Text
 import io.embodit.trafficsignals.BuildConfig
 import io.embodit.trafficsignals.R
@@ -67,8 +69,10 @@ import io.embodit.trafficsignals.domain.Judge
 import io.embodit.trafficsignals.domain.Lane
 import io.embodit.trafficsignals.domain.Levels
 import io.embodit.trafficsignals.domain.Tr
+import io.embodit.trafficsignals.domain.Volume
 import io.embodit.trafficsignals.platform.TsLog
 import io.embodit.trafficsignals.ui.Dialog
+import io.embodit.trafficsignals.ui.KeyMark
 import io.embodit.trafficsignals.ui.Phase
 import io.embodit.trafficsignals.ui.Screen
 import io.embodit.trafficsignals.ui.TsController
@@ -267,12 +271,12 @@ private fun BigCard(title: String, sub: String, icon: Int, name: String, modifie
         shape = RoundedCornerShape(24.dp),
         colors = ButtonDefaults.buttonColors(containerColor = PicoTheme.colorScheme.fillTertiary, contentColor = PicoTheme.colorScheme.labelPrimary),
     ) {
-        Column(modifier = Modifier.fillMaxSize().padding(vertical = 16.dp), horizontalAlignment = Alignment.Start, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(modifier = Modifier.fillMaxSize().padding(vertical = 16.dp), horizontalAlignment = Alignment.Start, verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically)) {
             // D13: a blue icon straight on the grey card is about 2:1; the blue goes into a disc with dark ink on it (5.6:1)
-            Box(modifier = Modifier.size(52.dp).clip(CircleShape).background(TsColors.InteractionFill), contentAlignment = Alignment.Center) {
-                Icon(painter = painterResource(icon), contentDescription = null, modifier = Modifier.size(28.dp), tint = TsColors.Ink)
+            Box(modifier = Modifier.size(72.dp).clip(CircleShape).background(TsColors.InteractionFill), contentAlignment = Alignment.Center) {
+                Icon(painter = painterResource(icon), contentDescription = null, modifier = Modifier.size(44.dp), tint = TsColors.Ink)
             }
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.height(6.dp))
             Text(text = title, style = TsType.title.copy(fontSize = 20.sp, lineHeight = 26.sp), color = PicoTheme.colorScheme.labelPrimary, maxLines = 1, onTextLayout = fits(name, title))
             // two lines reserved: the three titles stay level whichever card wraps
             Text(text = sub, style = TsType.label, color = PicoTheme.colorScheme.labelPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.height(44.dp), onTextLayout = fits("${name}_sub", sub))
@@ -363,6 +367,18 @@ private fun ColumnScope.Settings(state: TsUiState, onEvent: (TsEvent) -> Unit) {
         Column(modifier = Modifier.weight(1f)) {
             SettingRow(state.t(Ui.language), name = "row_lang") { Seg(listOf(state.t(Ui.langZh) to state.zh, state.t(Ui.langEn) to !state.zh), "set_lang", 72.dp) { onEvent(TsEvent.Lang(it == 0)) } }
             SettingRow(state.t(Ui.sound), name = "row_sound") { SoundKey(state, onEvent) }
+            // q3-4: three detents (33 / 66 / 100 %) + the mute key above; the first picks up on any tap on the track
+            SettingRow(state.t(Ui.volume), name = "row_volume") {
+                Slider(
+                    state.volume,
+                    { v: Float -> onEvent(TsEvent.VolumeSet(v)) },
+                    Modifier.width(150.dp).probe("set_volume"),
+                    0f..1f,
+                    {},
+                    colors = SliderDefaults.sliderColors(trackColor = PicoTheme.colorScheme.fillPrimary, progressColor = PicoTheme.colorScheme.interaction, progressHighColor = PicoTheme.colorScheme.interaction),
+                )
+                Text(text = Volume.percent(state.volume), style = TsType.label, color = PicoTheme.colorScheme.labelPrimary, maxLines = 1, modifier = Modifier.width(48.dp), onTextLayout = fits("volume_pct", Volume.percent(state.volume)))
+            }
             SettingRow(state.t(Ui.officerSize), name = "row_size") { Seg(listOf(state.t(Ui.lifeSize) to !state.big, state.t(Ui.bigger) to state.big), "set_size", 100.dp) { onEvent(TsEvent.Big(it == 1)) } }
         }
         Column(modifier = Modifier.weight(1f)) {
@@ -397,16 +413,19 @@ private fun TsUiState.levelTitle(): String = if (level == 0) t(Ui.drillName) els
 
 @Composable
 private fun ColumnScope.Intro(state: TsUiState, onEvent: (TsEvent) -> Unit) {
-    Header(state.levelTitle(), { onEvent(TsEvent.OpenLevels) }, state.t(Ui.back)) {
+    Header(state.levelTitle(), null, "") {
         SoundKey(state, onEvent)
     }
-    Spacer(Modifier.height(12.dp))
-    val goal = if (state.level in 1..6) Content.levelGoal[state.level - 1].of(state.zh) else ""
-    Text(text = goal, style = TsType.title, color = PicoTheme.colorScheme.labelPrimary, maxLines = 2)
-    Spacer(Modifier.height(8.dp))
-    Text(text = state.f(Ui.questionsN, state.questions.size) + if (state.timed) " · " + state.t(Ui.timedNote) else "", style = TsType.body, color = PicoTheme.colorScheme.labelPrimary)
     Spacer(Modifier.weight(1f))
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+    val goal = if (state.level in 1..6) Content.levelGoal[state.level - 1].of(state.zh) else ""
+    Text(text = goal, style = TsType.headline, color = PicoTheme.colorScheme.labelPrimary, maxLines = 3, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+    Spacer(Modifier.height(12.dp))
+    Text(text = state.f(Ui.questionsN, state.questions.size) + if (state.timed) " · " + state.t(Ui.timedNote) else "", style = TsType.body, color = PicoTheme.colorScheme.labelPrimary, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+    Spacer(Modifier.weight(1f))
+    // q3-3: [返回] sits with [开始], out of the corner the TabBar and system windows cover
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Key(state.t(Ui.back), "quiz_back", icon = R.drawable.ic_chevron_left, height = 56.dp) { onEvent(TsEvent.OpenLevels) }
+        Spacer(Modifier.weight(1f))
         Key(state.t(Ui.start), "quiz_start", icon = R.drawable.ic_play_arrow, primary = true, height = 56.dp) { onEvent(TsEvent.Start) }
     }
 }
@@ -416,10 +435,8 @@ private fun ColumnScope.Intro(state: TsUiState, onEvent: (TsEvent) -> Unit) {
 private fun QuizTop(state: TsUiState, onEvent: (TsEvent) -> Unit) {
     val title = state.levelTitle()
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().height(52.dp)) {
-        Text(text = title, style = TsType.title, color = PicoTheme.colorScheme.labelPrimary, maxLines = 2, modifier = Modifier.weight(1f, fill = false), onTextLayout = fits("quiz_title", title))
+        Text(text = title, style = TsType.title, color = PicoTheme.colorScheme.labelPrimary, maxLines = 2, modifier = Modifier.weight(1f), onTextLayout = fits("quiz_title", title))
         Chip("${state.index + 1} / ${state.questions.size}")
-        // a tiny weight: the title (fill = false) may take nearly all the free width before it wraps
-        Spacer(Modifier.weight(0.01f))
         SoundKey(state, onEvent)
         Key(state.t(Ui.home), "quiz_home", icon = R.drawable.ic_home) { onEvent(TsEvent.Home) }
     }
@@ -428,7 +445,7 @@ private fun QuizTop(state: TsUiState, onEvent: (TsEvent) -> Unit) {
 @Composable
 private fun ColumnScope.Question(state: TsUiState, onEvent: (TsEvent) -> Unit) {
     val q = state.question ?: return
-    val watching = state.phase == Phase.WATCH && !state.paused
+    val watching = state.canAnswer
     QuizTop(state, onEvent)
     Spacer(Modifier.height(6.dp))
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().height(52.dp)) {
@@ -444,15 +461,14 @@ private fun ColumnScope.Question(state: TsUiState, onEvent: (TsEvent) -> Unit) {
     Spacer(Modifier.weight(1f))
     Text(text = state.t(Ui.askLane), style = TsType.headline, color = PicoTheme.colorScheme.labelPrimary, maxLines = 2, modifier = Modifier.align(Alignment.CenterHorizontally), onTextLayout = fits("quiz_ask", state.t(Ui.askLane)))
     Spacer(Modifier.weight(1f))
-    val correct = state.verdict?.answer
     @Composable
     fun RowScope.answer(a: Answer, w: Float = 1f) {
+        // q3-1: nothing marks a key until the question is judged, paused and lane change included (TsUiState.answerMark)
         val outline =
-            when {
-                watching -> null
-                a == correct -> PicoTheme.colorScheme.passable
-                a == state.yours -> PicoTheme.colorScheme.error
-                else -> null
+            when (state.answerMark(a)) {
+                KeyMark.RIGHT -> PicoTheme.colorScheme.passable
+                KeyMark.WRONG -> PicoTheme.colorScheme.error
+                KeyMark.NONE -> null
             }
         Key(Content.answer[a]!!.of(state.zh), "answer_${a.id}", height = 60.dp, enabled = watching || outline != null, outline = outline, fill = true, modifier = Modifier.weight(w)) { onEvent(TsEvent.Pick(a)) }
     }
@@ -652,7 +668,13 @@ private fun ColumnScope.Lesson(state: TsUiState, onEvent: (TsEvent) -> Unit) {
         Spacer(Modifier.height(6.dp))
         val steps = g?.let { Content.steps[it]!! } ?: Content.lesson0Steps
         val list = rememberLazyListState()
-        LaunchedEffect(state.lessonStep) { runCatching { list.animateScrollToItem((state.lessonStep - 1).coerceAtLeast(0)) } }
+        // scroll only when the current step is not fully in view: a list moving under the pointer loses taps on its rows
+        LaunchedEffect(state.lessonStep) {
+            val info = list.layoutInfo
+            val row = info.visibleItemsInfo.firstOrNull { it.index == state.lessonStep }
+            val inView = row != null && row.offset >= 0 && row.offset + row.size <= info.viewportEndOffset
+            if (!inView) runCatching { list.animateScrollToItem((state.lessonStep - 1).coerceAtLeast(0)) }
+        }
         LazyColumn(state = list, modifier = Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(14.dp))) {
             itemsIndexed(steps) { i, tr ->
                 val current = i == state.lessonStep

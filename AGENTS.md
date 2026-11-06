@@ -32,7 +32,8 @@ app/src/main/java/io/embodit/trafficsignals/
     TsController.kt         ALL behaviour: events -> state (also the L6 5 s timer); debug seams at the bottom
     TsScreen.kt             wires controller, scene, panels; lifecycle -> pause (S18)
     scene/TrafficScene.kt   ECS: build (IO for resources), placement, lane fade, officer turn + clips, flows, cars
-    scene/Street.kt         the painted crossroads (2048² texture), props, cars, bonnet, Bézier car paths, ribbons
+    scene/Street.kt         the painted crossroads (2048² texture), props, Bézier car paths, ribbons
+    scene/CarKit.kt         the cars and your own car as lofted smooth meshes (PBR, `Mats.paint`); no box helper
     scene/Palette.kt        three-shade colour atlas (sun from the south-west baked in) + Toon mesh builder
     scene/Officer.kt        the Tripo GLB: play / freeze clips, timing from assets/officer_clips.json
     scene/PanelRig.kt       the panel slot of the Stage chip (Spatial Ruler findings)
@@ -54,11 +55,12 @@ left of the window's centre in every lane, 39° at ×1.5, the lesson post 4° fu
 the window draws 1 dp as 0.00173 m, not the converter's 0.0008). The eye sits on the
 turning axis. He is on a post from the moment the scene is built (`openingFeet`), never at the driver origin (D14: the
 2026-11-05 headset report: until the first placement he stood at the origin, which is you). `SeatPlacer` does the placing
-(start, [回正], window reopened elsewhere). The driver root must stay enabled while the GLB loads: `findSkinnedMeshEntity`
+(start, [回正], window reopened elsewhere). The steps of a verdict move him to the near post too, in every lane (`lessonSpot(laneX)`),
+through the same fade as a lane change. The driver root must stay enabled while the GLB loads: `findSkinnedMeshEntity`
 finds nothing below a disabled parent.
 
 **Light (B24).** Officer: PBR, `assets/ibl/city_ibl.ktx` (tools/make_ibl.py) at exponent 9 + one warm sun 3000 lux. Street:
-Unlit. `tools/officer_light.py SHOT.png` measures the burnt-out share on a close-up; `light ibl EXP` / `light sun LUX` tune live.
+Unlit, cars PBR under the same lights. `tools/officer_light.py SHOT.png` measures the burnt-out share on a close-up; `light ibl EXP` / `light sun LUX` tune live.
 
 ## Officer asset pipeline
 
@@ -124,9 +126,10 @@ eye, always >= 5.7 m), `OVERFLOW name=… text=…` (a fixed-line text that does
 
 ## Real taps (profile D43)
 
-`tools/tap.sh NAME` taps a probed control with `adb shell input tap` (window px), `tools/tap.sh tab N` taps TabBar item N (the
-TabBar is its own window at [0,0]-[704,176] on top in input order, so controls of the main window under that corner can't be
-reached this way). `tools/tap_flow.sh OUT` walks the core flow with these only.
+`tools/tap.sh NAME` taps a probed control with `adb shell input tap` (window px), `tools/tap.sh tab N` taps TabBar item N. In
+adb coordinates the TabBar window [0,0]-[704,176] and systemui windows [0,0]-[236,208], [364,0]-[600,208] lie on top of the main
+window: no key may have its centre in x < 704, y < 208 px (`bounds` marks those `COVERED`), and tabs 0 and 3 can't be tapped here.
+`tools/tap_flow.sh OUT` walks the core flow with real taps only; `tools/tap_sweep.sh` taps every key of every page once.
 
 ## Contrast gate (build prompt, before every QA hand-off)
 
@@ -155,6 +158,12 @@ background pair: fixed colours exactly, the SpatialUI vibrant roles measured on 
 | S15 | `lang en` then S2 / S6 / S7 / S4 |
 | S18 | `background` |
 | readability | `panels 0`, `facing SOUTH|WEST|NORTH|EAST` |
+
+## Sound
+
+`domain/SoundSynth.kt` is pure: the app plays and the JVM test renders the same samples. Source level near full scale, slider
+33 / 66 / 100 % (default 100 %), mute key separate. `testDebugUnitTest` writes `app/build/loudness/loudness.wav` (16-bit PCM,
+the sounding section at the default gain): copy it to the factory's `apps/traffic-signals/qa/loudness-<version>.wav`.
 
 ## Platform facts found here
 

@@ -376,53 +376,6 @@ internal object Street {
         }
     }
 
-    /** A saloon 4.6 × 1.8 × 1.45 m, nose towards -Z, origin on the road under its centre. */
-    fun car(t: Toon, color: Int) {
-        val w = 0.9f
-        t.box(color, Vec3(-w, 0.28f, -2.3f), Vec3(w, 0.82f, 2.3f))
-        // cabin, narrower, glass all round
-        t.box(Palette.CAR_GLASS, Vec3(-0.78f, 0.82f, -0.95f), Vec3(0.78f, 1.40f, 1.15f), top = color)
-        t.box(color, Vec3(-0.8f, 1.40f, -0.85f), Vec3(0.8f, 1.45f, 1.05f))
-        for (sx in floatArrayOf(-1f, 1f)) for (sz in floatArrayOf(-1.45f, 1.45f)) {
-            t.box(Palette.TYRE, Vec3(sx * w - 0.12f, 0f, sz - 0.33f), Vec3(sx * w + 0.12f, 0.6f, sz + 0.33f))
-        }
-        // lamps
-        t.box(Palette.LIGHT_GREY, Vec3(-0.8f, 0.6f, -2.32f), Vec3(-0.45f, 0.72f, -2.3f))
-        t.box(Palette.LIGHT_GREY, Vec3(0.45f, 0.6f, -2.32f), Vec3(0.8f, 0.72f, -2.3f))
-    }
-
-    /**
-     * Your own car's bonnet (design scene.intersection.hood): 1.1 - 1.9 m ahead, 0.45 m below the eye at its rear edge,
-     * sloping down to the nose. It must stay BEHIND the 0.95 m panels (their lower edge is 0.49 m below the eye), so the
-     * bonnet can never cover a panel (profile D20), 1.7 m wide with rounded shoulders and a front lip, so it reads
-     * as the car you sit in rather than a board in the air. Driver frame, x right of the eye.
-     */
-    fun hood(t: Toon, color: Int, eyeH: Float) {
-        val cx = 0.4f
-        val nx = 10
-        val nz = 6
-        val z0 = -1.1f
-        val z1 = -1.95f
-        fun pt(i: Int, j: Int): Vec3 {
-            val u = i / nx.toFloat() * 2 - 1
-            val v = j / nz.toFloat()
-            val y = eyeH - io.embodit.trafficsignals.domain.StageLayout.HOOD_DROP - 0.08f * v - 0.08f * u * u * u * u - 0.03f * v * v
-            return Vec3(cx + u * 0.85f, y, z0 + (z1 - z0) * v)
-        }
-        for (i in 0 until nx) for (j in 0 until nz) t.quad(color, pt(i, j), pt(i + 1, j), pt(i + 1, j + 1), pt(i, j + 1), 0)
-        // nose and the two flanks down to the wheel-arch line
-        for (i in 0 until nx) {
-            val a = pt(i, nz)
-            val b = pt(i + 1, nz)
-            t.quad(color, Vec3(a.x, a.y - 0.25f, a.z), Vec3(b.x, b.y - 0.25f, b.z), b, a, 2)
-        }
-        for (side in intArrayOf(0, nx)) for (j in 0 until nz) {
-            val a = pt(side, j)
-            val b = pt(side, j + 1)
-            t.quad(color, Vec3(a.x, a.y - 0.25f, a.z), Vec3(b.x, b.y - 0.25f, b.z), b, a, 2)
-        }
-    }
-
     /** The small 0.40 m lesson post (design lessonSpot) as its own mesh. */
     fun lessonPost(t: Toon) {
         t.cylinder(Palette.POST_WHITE, 0f, 0f, 0.5f, 0f, 0.15f, 24)

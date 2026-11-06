@@ -50,8 +50,17 @@ object StageLayout {
     /** The lesson post stands 6 m out, where he spans more: this much further left than the crossroads post. */
     const val LESSON_EXTRA_LEFT_DEG = 4f
 
-    /** Bonnet top below the eye: the window's system row (down to -19.6°) stays above its far edge (-20.0°). */
-    const val HOOD_DROP = 0.60f
+    /**
+     * Your own car, driver frame, seat at the left of its centre line: deck / door tops [HOOD_DROP] below the eye behind the
+     * cowl ([HOOD_COWL_Z]), the bonnet falls to [HOOD_NOSE_DROP] at the nose ([HOOD_NOSE_Z]). Short and low so it stays
+     * clear of the window's system row (at least 2.5° in every seat, [hoodElevationDeg]; q3-5).
+     */
+    const val HOOD_CX = 0.4f
+    const val HOOD_HALF_W = 0.9f
+    const val HOOD_DROP = 0.55f
+    const val HOOD_NOSE_DROP = 0.78f
+    const val HOOD_COWL_Z = -0.7f
+    const val HOOD_NOSE_Z = -1.5f
 
     const val LESSON_DIST = 6f
 
@@ -64,16 +73,14 @@ object StageLayout {
     /** Bearing from your seat along the road, radians, + = left of the road's ahead. */
     private fun bearing(p: Vec3): Float = atan2(-p.x, -p.z)
 
-    /** The foot of the lesson post: 6 m out, [LESSON_EXTRA_LEFT_DEG] left of the crossroads post seen from the straight lane (where lessons happen). */
-    val LESSON_SPOT: Vec3 = run {
-        val b = bearing(junctionLocal(Lane.STRAIGHT.x)) + Math.toRadians(LESSON_EXTRA_LEFT_DEG.toDouble()).toFloat()
-        Vec3(-LESSON_DIST * kotlin.math.sin(b), 0f, -LESSON_DIST * kotlin.math.cos(b))
+    /** The foot of the near post in this seat: 6 m out, [LESSON_EXTRA_LEFT_DEG] left of the crossroads post (lessons; the steps of a verdict in any lane). */
+    fun lessonSpot(laneX: Float): Vec3 {
+        val b = bearing(junctionLocal(laneX)) + Math.toRadians(LESSON_EXTRA_LEFT_DEG.toDouble()).toFloat()
+        return Vec3(-LESSON_DIST * kotlin.math.sin(b), 0f, -LESSON_DIST * kotlin.math.cos(b))
     }
 
-    fun lessonFeet(): Vec3 = LESSON_SPOT + Vec3(0f, POST_H, 0f)
-
-    /** Where he stands on a screen: lessons on the near post, everything else (opening, reset, home, quiz) on the crossroads post. */
-    fun officerFeet(lessonPost: Boolean, laneX: Float): Vec3 = if (lessonPost) lessonFeet() else postFeet(laneX)
+    /** Where he stands: near post for a lesson or the steps of a verdict, everything else (opening, reset, home, quiz) on the crossroads post. */
+    fun officerFeet(near: Boolean, laneX: Float): Vec3 = if (near) lessonSpot(laneX) + Vec3(0f, POST_H, 0f) else postFeet(laneX)
 
     /** The opening spot, set when the scene is built, before anything is shown. */
     fun openingFeet(): Vec3 = postFeet(Lane.STRAIGHT.x)
@@ -103,6 +110,32 @@ object StageLayout {
         val reach = Math.toDegrees(atan((ARM_REACH * scale / range).toDouble())).toFloat()
         return centre - reach - windowHalfDeg()
     }
+
+    /** How far the bonnet's top falls below the eye at driver-frame z. */
+    fun hoodDrop(z: Float): Float {
+        val s = ((HOOD_COWL_Z - z) / (HOOD_COWL_Z - HOOD_NOSE_Z)).coerceIn(0f, 1f)
+        return HOOD_DROP + (HOOD_NOSE_DROP - HOOD_DROP) * s * s
+    }
+
+    /**
+     * The highest your car reaches in the view along azimuth [azDeg] (right of the road's ahead, degrees), degrees below the
+     * horizon. The window's system row hangs on the line of sight, so the seat's yaw is the azimuth to check.
+     */
+    fun hoodElevationDeg(azDeg: Float): Float {
+        val a = Math.toRadians(azDeg.toDouble())
+        val sx = kotlin.math.sin(a).toFloat()
+        val cz = kotlin.math.cos(a).toFloat()
+        val toNose = if (cz > 1e-3f) -HOOD_NOSE_Z / cz else Float.MAX_VALUE
+        val rightEdge = HOOD_CX + HOOD_HALF_W
+        val leftEdge = HOOD_CX - HOOD_HALF_W
+        val toSide = if (sx > 1e-3f) rightEdge / sx else if (sx < -1e-3f) leftEdge / sx else Float.MAX_VALUE
+        val d = minOf(toNose, toSide)
+        return Math.toDegrees(kotlin.math.atan2(hoodDrop(-cz * d).toDouble(), d.toDouble())).toFloat()
+    }
+
+    /** Clear degrees between the window's system row and your car in this seat (q3-5). */
+    fun hoodGapDeg(laneX: Float, big: Boolean): Float =
+        hoodElevationDeg(Math.toDegrees(seatYaw(laneX, big).toDouble()).toFloat()) - windowBottomDeg()
 
     /** The "open panel" key / the look-level hint in the driver-free sight frame: [dist] m out, [belowDeg] below the eye. */
     fun chipAt(eye: Vec3, sightYaw: Float, dist: Float, belowDeg: Float): Vec3 {

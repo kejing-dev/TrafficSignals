@@ -12,6 +12,7 @@ import io.embodit.trafficsignals.domain.Lane
 import io.embodit.trafficsignals.domain.Levels
 import io.embodit.trafficsignals.domain.Mistake
 import io.embodit.trafficsignals.domain.Question
+import io.embodit.trafficsignals.domain.Volume
 import io.embodit.trafficsignals.domain.nextAskableLane
 import io.embodit.trafficsignals.platform.Sound
 import io.embodit.trafficsignals.platform.Store
@@ -65,6 +66,7 @@ sealed interface TsEvent {
     data object NextLevel : TsEvent
     data class Lang(val zh: Boolean) : TsEvent
     data class SoundOn(val on: Boolean) : TsEvent
+    data class VolumeSet(val value: Float) : TsEvent
     data class Big(val big: Boolean) : TsEvent
     data class Slow(val slow: Boolean) : TsEvent
     data object Recenter : TsEvent
@@ -104,6 +106,7 @@ object TsController {
     private var deadlineAtMs = 0L
     private var rnd = Random(SystemClock.elapsedRealtime())
     private var started = false
+    private var doneWhileAsked = false
     var activity: Activity? = null
 
     fun start(context: Context) {
@@ -112,8 +115,9 @@ object TsController {
         val s = Store(context.applicationContext)
         store = s
         sound.enabled = s.sound
+        sound.volume = s.volume
         scope.launch(Dispatchers.Default) { sound.warm() }
-        _state.value = TsUiState(zh = s.zh, sound = s.sound, big = s.big, slow = s.slow, best = s.best, mistakes = s.mistakes, learned = s.learned)
+        _state.value = TsUiState(zh = s.zh, sound = s.sound, volume = s.volume, big = s.big, slow = s.slow, best = s.best, mistakes = s.mistakes, learned = s.learned)
         log("start")
     }
 
@@ -186,6 +190,10 @@ object TsController {
             TsEvent.CloseDialog -> {
                 set("dialog-close") { it.copy(dialog = Dialog.NONE) }
                 if (!s.paused) resumeTimer()
+                if (doneWhileAsked) {
+                    doneWhileAsked = false
+                    gestureDone()
+                }
             }
             TsEvent.Again -> openLevel(s.level, if (s.level == 0) Levels.drill(s.mistakes, rnd) else Levels.build(s.level, rnd))
             TsEvent.NextLevel -> if (s.level in 1 until Levels.COUNT) onEvent(TsEvent.OpenLevel(s.level + 1)) else onEvent(TsEvent.OpenReview)
@@ -198,6 +206,16 @@ object TsController {
                 sound.enabled = e.on
                 TsLog.i("SOUND on=${e.on}")
                 set("sound") { it.copy(sound = e.on) }
+            }
+            is TsEvent.VolumeSet -> {
+                val v = Volume.snap(e.value)
+                if (v != s.volume) {
+                    store?.volume = v
+                    sound.volume = v
+                    set("volume") { it.copy(volume = v) }
+                    sound.right() // hear what you picked
+                    TsLog.i("SOUND volume=$v")
+                }
             }
             is TsEvent.Big -> {
                 store?.big = e.big
@@ -238,6 +256,7 @@ object TsController {
     /** Leaves any level: the clock, the hum and the question go, the seat returns to the straight lane. */
     private fun goTo(screen: Screen, why: String) {
         stopTimer()
+        doneWhileAsked = false
         set(why) { it.copy(screen = screen, dialog = Dialog.NONE, leaveTo = null, paused = false, breakdown = false, phase = Phase.WATCH, demo = false, hint = false, lane = Lane.STRAIGHT, questions = emptyList(), index = 0, outcomes = emptyList()) }
     }
 
@@ -355,10 +374,21 @@ object TsController {
     private fun gestureDone() {
         val s = _state.value
         if (s.screen != Screen.QUIZ || s.phase != Phase.WATCH) return
+        // paused: [继续] plays the signal again, its end starts the clock then; the scene hears of a pause a frame late
+        if (s.paused) return
+        // a "leave?" on top holds everything; a signal that ended just then starts the clock after [keep going] (q3-2)
+        if (s.dialog != Dialog.NONE) {
+            doneWhileAsked = true
+            return
+        }
         if (s.timed && !s.demo && timerJob == null) startTimer((Levels.TIMED_SEC * 1000).toLong())
     }
 
     // ---------------------------------------------------------------- L6 countdown
+
+    /** The L6 clock is running right now (tests, QA). */
+    val clockRunning: Boolean
+        get() = timerJob != null
 
     private fun startTimer(ms: Long) {
         deadlineLeftMs = ms
@@ -398,7 +428,7 @@ object TsController {
 
     private fun timeUp() {
         val s = _state.value
-        if (s.screen != Screen.QUIZ || s.phase != Phase.WATCH) return
+        if (s.screen != Screen.QUIZ || s.phase != Phase.WATCH || s.dialog != Dialog.NONE || s.paused) return
         val q = s.question ?: return
         val v = Judge.verdict(q.copy(lane = s.lane)) ?: return
         sound.wrong()

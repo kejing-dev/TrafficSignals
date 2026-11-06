@@ -49,7 +49,7 @@ case "${1:-}" in
   shot)
     check
     dir="${3:-$ROOT/.scratch/shots}"; mkdir -p "$dir"
-    pico-cli capture screenshot --device $DEV --out "$dir/${2:-shot}.png" >/dev/null 2>&1 || adb -s $DEV exec-out screencap -p > "$dir/${2:-shot}.png"
+    rm -f "$dir/${2:-shot}.png"; pico-cli capture screenshot --device $DEV --out "$dir/${2:-shot}.png" >/dev/null 2>&1 || adb -s $DEV exec-out screencap -p > "$dir/${2:-shot}.png"
     echo "$dir/${2:-shot}.png" ;;
   *) echo "usage: dev.sh build|test|install|launch|stop|relaunch|cmd|log|crash|shot" ;;
 esac

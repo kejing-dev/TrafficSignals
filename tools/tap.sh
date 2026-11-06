@@ -2,11 +2,13 @@
 # Real taps through `adb shell input` (window px), never a debug command (profile D43). The window's Compose gets them as
 # pointer events. The system TabBar is its own small window at [0,0]-[704,176] on top of the main one in input order, so
 #   tools/tap.sh NAME        taps a probed control of the window (`bounds`)
-#   tools/tap.sh tab N       taps TabBar item N (0 home, 1 lessons, 2 levels, 3 review, 4 settings)
+#   tools/tap.sh tab N       taps TabBar item N (1 lessons, 2 levels, 4 settings; 0 home and 3 review are covered, see below)
 # Waits WAIT s (default 5), prints the state.
 DEV=${DEV:-emulator-5554}; D="$(cd "$(dirname "$0")" && pwd)/dev.sh"
 if [ "$1" = "tab" ]; then
-  adb -s $DEV shell input tap $(( ($2 * 2 + 1) * 704 / 10 )) 88; name="tab$2"; xy="tabbar"
+  # systemui windows cover 主页 (16-144) and 错题本 (424-552) in adb coordinates (QA round 3): those two can't be reached here
+  case "$2" in 1) x=258 ;; 2) x=352 ;; 4) x=624 ;; *) echo "tab $2 is covered in adb coordinates (device checklist)"; exit 3 ;; esac
+  adb -s $DEV shell input tap $x 88; name="tab$2"; xy="tabbar"
 else
   "$D" cmd bounds >/dev/null
   line=$(adb -s $DEV logcat -d -s TrafficSignals:V | grep "BOUNDS [^ ]* $1 " | tail -1)

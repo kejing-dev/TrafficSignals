@@ -21,6 +21,10 @@ class Store(context: Context) {
         get() = prefs.getBoolean("sound", true)
         set(v) = prefs.edit().putBoolean("sound", v).apply()
 
+    var volume: Float
+        get() = prefs.getFloat("volume", io.embodit.trafficsignals.domain.Volume.DEFAULT)
+        set(v) = prefs.edit().putFloat("volume", v).apply()
+
     var big: Boolean
         get() = prefs.getBoolean("big", false)
         set(v) = prefs.edit().putBoolean("big", v).apply()

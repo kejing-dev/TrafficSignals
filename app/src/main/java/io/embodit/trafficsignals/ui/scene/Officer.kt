@@ -98,6 +98,22 @@ internal class Officer(val root: Entity, private val clips: OfficerClips) {
         return (nowMs - startedAtMs) / 1000f * speed >= duration(name)
     }
 
+    private var heldAtMs = -1L
+
+    /** Stops the clip where it is (a "leave?" on top, q3-2); [unhold] carries on from the same pose, the same time left. */
+    fun hold(nowMs: Long) {
+        if (heldAtMs >= 0L) return
+        heldAtMs = nowMs
+        pause()
+    }
+
+    fun unhold(nowMs: Long) {
+        if (heldAtMs < 0L) return
+        startedAtMs += nowMs - heldAtMs
+        heldAtMs = -1L
+        if (frozenAt == null) resume()
+    }
+
     fun pause() = controllers.forEach { runCatching { it.pause() } }
 
     fun resume() = controllers.forEach { runCatching { it.resume() } }

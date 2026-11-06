@@ -66,8 +66,8 @@ class StageLayoutTest {
     fun windowNeverCoversHim() {
         // the window frame (the TabBar and the system row fit inside its width), lane by lane, lesson post, life size and x1.5
         for (lesson in listOf(false, true)) for (lane in Lane.entries) for (big in listOf(false, true)) {
-            val feet = StageLayout.officerFeet(lesson, if (lesson) Lane.STRAIGHT.x else lane.x)
-            val gap = StageLayout.windowGapDeg(feet, if (lesson) Lane.STRAIGHT.x else lane.x, big)
+            val feet = StageLayout.officerFeet(lesson, lane.x)
+            val gap = StageLayout.windowGapDeg(feet, lane.x, big)
             assertTrue("lesson=$lesson lane=$lane big=$big gap=$gap", gap >= 10f)
         }
     }
@@ -87,15 +87,26 @@ class StageLayoutTest {
     }
 
     @Test
-    fun bonnetStaysBelowTheWindowAndItsSystemRow() {
-        // Street.hood: its far edge (z -1.95) is the highest it gets on your sight: HOOD_DROP + 0.11 m below the eye
-        val hoodDeg = Math.toDegrees(kotlin.math.atan2((StageLayout.HOOD_DROP + 0.11f).toDouble(), 1.95)).toFloat()
-        assertTrue("window + system row ${StageLayout.windowBottomDeg()}° vs bonnet $hoodDeg°", StageLayout.windowBottomDeg() < hoodDeg)
+    fun ownCarStaysClearOfTheWindowsSystemRow() {
+        for (lane in Lane.entries) for (big in listOf(false, true)) {
+            val gap = StageLayout.hoodGapDeg(lane.x, big)
+            assertTrue("lane=$lane big=$big: ${StageLayout.windowBottomDeg()}° row, gap $gap°", gap >= 2.5f)
+        }
+    }
+
+    @Test
+    fun verdictStepsStandOnTheNearPostInEveryLaneAndClearOfTheWindow() {
+        for (lane in Lane.entries) for (big in listOf(false, true)) {
+            val feet = StageLayout.officerFeet(true, lane.x)
+            assertEquals(StageLayout.LESSON_DIST, kotlin.math.hypot(feet.x, feet.z), 1e-3f)
+            val gap = StageLayout.windowGapDeg(feet, lane.x, big)
+            assertTrue("lane=$lane big=$big gap=$gap", gap >= 10f)
+        }
     }
 
     @Test
     fun lessonPostIsSixMetresOutJustLeftOfTheCrossroadsPost() {
-        val a = StageLayout.LESSON_SPOT
+        val a = StageLayout.lessonSpot(Lane.STRAIGHT.x)
         val b = StageLayout.junctionLocal(Lane.STRAIGHT.x)
         assertEquals(StageLayout.LESSON_DIST, kotlin.math.hypot(a.x, a.z), 1e-3f)
         val diff = Math.toDegrees((kotlin.math.atan2(-a.x, -a.z) - kotlin.math.atan2(-b.x, -b.z)).toDouble())

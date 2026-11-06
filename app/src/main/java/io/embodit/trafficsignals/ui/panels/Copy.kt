@@ -45,6 +45,7 @@ object Ui {
     val timeoutWord = Tr("没答", "nothing")
     // settings (profile D26)
     val language = Tr("语言", "Language")
+    val volume = Tr("音量", "Volume")
     val officerSize = Tr("交警大小", "Officer size")
     val gestureSpeed = Tr("手势速度", "Signal speed")
     val recenterRow = Tr("路口位置", "Crossroads")

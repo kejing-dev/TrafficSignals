@@ -16,6 +16,9 @@ enum class Phase { WATCH, CORRECT, WRONG, TIMEOUT, SWITCHING, DEMO }
 
 enum class Dialog { NONE, LEAVE, EXIT, RESET }
 
+/** What an answer key shows. Only a judged question may mark the keys: never while it can still be answered (QA q3-1). */
+enum class KeyMark { NONE, RIGHT, WRONG }
+
 data class Outcome(val question: Question, val yours: Answer?, val correct: Answer, val hinted: Boolean) {
     val ok: Boolean
         get() = yours == correct
@@ -29,6 +32,7 @@ data class TsUiState(
     val paused: Boolean = false,
     val zh: Boolean = true,
     val sound: Boolean = true,
+    val volume: Float = io.embodit.trafficsignals.domain.Volume.DEFAULT,
     val big: Boolean = false,
     val slow: Boolean = false,
     // lesson (S3 / S4): 0 = orientation, 1..8 = gestures
@@ -79,6 +83,22 @@ data class TsUiState(
 
     val timed: Boolean
         get() = level == io.embodit.trafficsignals.domain.Levels.TIMED_LEVEL
+
+    /** An answer counts only now: watching, not paused, nothing asked on top (S6). */
+    val canAnswer: Boolean
+        get() = screen == Screen.QUIZ && phase == Phase.WATCH && !paused && dialog == Dialog.NONE
+
+    fun answerMark(a: Answer): KeyMark =
+        when {
+            !judged -> KeyMark.NONE
+            a == verdict?.answer -> KeyMark.RIGHT
+            a == yours -> KeyMark.WRONG
+            else -> KeyMark.NONE
+        }
+
+    /** The officer stands on the near post: a lesson, or the steps of a verdict (6 m, palm and head readable). */
+    val officerNear: Boolean
+        get() = screen == Screen.LESSON || (screen == Screen.QUIZ && breakdown)
 
     val lessonGesture: Gesture?
         get() = if (lesson in 1..8) Gesture.entries[lesson - 1] else null

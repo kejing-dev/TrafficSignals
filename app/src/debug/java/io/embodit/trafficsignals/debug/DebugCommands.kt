@@ -43,6 +43,7 @@ import io.embodit.trafficsignals.ui.window.WindowCtl
  *   background | resume                  S18 (as if the app went to the background) and back
  *   light ibl <exp> | sun <lux>          tune the lights live (B24 before / after shots)
  *   ray ox oy oz dx dy dz | off          fake a controller ray (the 6.1 emulator has none), D41 shots
+ *   volume <0..1>                        the slider (snaps to 33 / 66 / 100 %)
  *   pitch <deg>|off                      fake head pitch for the level gate (D9: "平视前方")
  *   bounds                               every probed control of the window: `BOUNDS name cx cy w h` (window px, for input tap)
  *   window close|open|chip               close the system window as × does / ask for it / press the chip's path
@@ -130,11 +131,12 @@ object DebugCommands {
             "light" -> return Probe.host?.scene()?.debugLight(args[0], args[1]) ?: "no scene"
             "ray" -> Probe.host?.scene()?.debugRay =
                 if (args.size >= 6) args.map { it.toFloat() }.let { a -> Vec3(a[0], a[1], a[2]) to Vec3(a[3], a[4], a[5]).normalized() } else null
+            "volume" -> ev(TsEvent.VolumeSet(args[0].toFloat()))
             "pitch" -> Probe.host?.scene()?.debugPitch = args.firstOrNull()?.takeIf { it != "off" }?.toFloat()
             "bounds" -> {
                 for (panel in listOf("window", "OPEN")) {
                     val size = Probe.sizeOf(panel)
-                    for ((name, b) in Probe.controlsOf(panel)) TsLog.i(String.format(java.util.Locale.US, "BOUNDS %s %s %.0f %.0f %.0f %.0f panel=%s", panel, name, b.cx, b.cy, b.w, b.h, size))
+                    for ((name, b) in Probe.controlsOf(panel)) TsLog.i(String.format(java.util.Locale.US, "BOUNDS %s %s %.0f %.0f %.0f %.0f panel=%s%s", panel, name, b.cx, b.cy, b.w, b.h, size, if (panel == "window" && b.cx < 704f && b.cy < 208f) " COVERED" else ""))
                 }
             }
             "window" ->
