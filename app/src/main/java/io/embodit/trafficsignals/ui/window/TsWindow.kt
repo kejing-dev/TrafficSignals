@@ -162,6 +162,8 @@ object WindowCtl {
             createdEpoch++
             opening = false
         }
+        // critic R4: the system − (minimise) takes the answers away just like ×, so a running L6 clock stops on ON_STOP too
+        if (event == "ON_STOP" && !recallPending && !quitting && !suppressed) TsController.onWindowClosed()
         if (event == "ON_DESTROY") {
             if (recallPending) {
                 recallPending = false

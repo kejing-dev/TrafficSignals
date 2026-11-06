@@ -32,7 +32,7 @@ import io.embodit.trafficsignals.ui.window.WindowCtl
  *   timeout                              L6 time-out now (S14)
  *   result <a>/<b>                       a fake result page (S10)
  *   seedMistakes <n> | clear             n fake mistakes (S11 with content) / empty the mistakes book
- *   dialog leave|exit|reset|close        the self-built dialogs (S12 ...)
+ *   dialog leave|exit|reset|clear|close       the self-built dialogs (S12 ...)
  *   dialog confirm|cancel                press the open dialog's right / left button (confirm on exit = TsEvent.Exit, the app quits)
  *   quit                                 settings -> [Quit app] -> [Quit]: the full D26 exit path
  *   block                                the "can't open" dialog (S13)
@@ -105,6 +105,7 @@ object DebugCommands {
                     "leave" -> ev(TsEvent.AskLeave)
                     "exit" -> ev(TsEvent.AskExit)
                     "reset" -> ev(TsEvent.AskReset)
+                    "clear" -> ev(TsEvent.AskClear)
                     // q1-7: press the dialog's buttons with the same events the panel sends
                     "confirm" -> return confirm()
                     "cancel" -> ev(TsEvent.CloseDialog)
@@ -160,6 +161,7 @@ object DebugCommands {
                 st.screen == Screen.BLOCKED -> TsEvent.Exit
                 st.dialog == Dialog.EXIT -> TsEvent.Exit
                 st.dialog == Dialog.RESET -> TsEvent.ResetProgress
+                st.dialog == Dialog.CLEAR -> TsEvent.ClearMistakes
                 st.dialog == Dialog.LEAVE -> TsEvent.Leave
                 else -> return "no dialog open state=${c.designState()}"
             }

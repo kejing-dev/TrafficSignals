@@ -105,7 +105,7 @@ or `tools/dev.sh cmd 'NAME ARGS'`. Each answers `CMD NAME -> ok state=<design id
 | `freeze K` / `freeze off` | hold the quiz gesture at step K |
 | `answer go/stop/wait/slow/lane/pull`, `hint`, `replay`, `next`, `switchLane`, `breakdown`, `home`, `back` | panel buttons |
 | `timeout` | L6 time-out now (S14) |
-| `result 8/10`, `seedMistakes 6`, `dialog leave/exit/reset/close`, `block` | S10, S11 with rows, DLG, S13 |
+| `result 8/10`, `seedMistakes 6`, `dialog leave/exit/reset/clear/close`, `block` | S10, S11 with rows, DLG, S13 |
 | `dialog confirm` / `dialog cancel` | press the open dialog's right / left button with the panel's own event: on the exit dialog (or S13) `confirm` = `TsEvent.Exit`, the app calls `finishAndRemoveTask()` and ends its process; reset -> ResetProgress; leave -> Leave |
 | `quit` | the whole D26 path: settings -> [Quit app] -> [Quit] (`EXIT confirmed` in the log, then the process is gone) |
 | `lang zh/en`, `sound on/off`, `big on/off`, `slow on/off` | settings |
@@ -129,7 +129,11 @@ eye, always >= 5.7 m), `OVERFLOW name=… text=…` (a fixed-line text that does
 `tools/tap.sh NAME` taps a probed control with `adb shell input tap` (window px), `tools/tap.sh tab N` taps TabBar item N. In
 adb coordinates the TabBar window [0,0]-[704,176] and systemui windows [0,0]-[236,208], [364,0]-[600,208] lie on top of the main
 window: no key may have its centre in x < 704, y < 208 px (`bounds` marks those `COVERED`), and tabs 0 and 3 can't be tapped here.
-`tools/tap_flow.sh OUT` walks the core flow with real taps only; `tools/tap_sweep.sh` taps every key of every page once.
+**In English the TabBar window is [0,0]-[1199,176]** (labels make it wider), so the top row is covered up to x = 1199 px:
+keep keys out of the top row unless they sit right of that (v0.1.4 moved the review [清空] to the bottom row and the quiz [声音]
+to the second row / the verdict's action row). `EN=1 tools/tap.sh tab N` uses the English positions (1 = 360, 2 = 640, 4 = 1065).
+`tools/tap_flow.sh OUT` walks the core flow with real taps only; `tools/tap_sweep.sh` taps every key of every page once
+(`EN=1 tools/tap_sweep.sh` runs it in English; do both before QA).
 
 ## Contrast gate (build prompt, before every QA hand-off)
 

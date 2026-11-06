@@ -7,7 +7,9 @@
 DEV=${DEV:-emulator-5554}; D="$(cd "$(dirname "$0")" && pwd)/dev.sh"
 if [ "$1" = "tab" ]; then
   # systemui windows cover 主页 (16-144) and 错题本 (424-552) in adb coordinates (QA round 3): those two can't be reached here
-  case "$2" in 1) x=258 ;; 2) x=352 ;; 4) x=624 ;; *) echo "tab $2 is covered in adb coordinates (device checklist)"; exit 3 ;; esac
+  # EN=1: the English TabBar window is 1199 px wide, items at 360 / 640 / 1065
+  if [ "${EN:-0}" = 1 ]; then case "$2" in 1) x=360 ;; 2) x=640 ;; 4) x=1065 ;; *) echo "tab $2: not mapped in English"; exit 3 ;; esac; else
+  case "$2" in 1) x=258 ;; 2) x=352 ;; 4) x=624 ;; *) echo "tab $2 is covered in adb coordinates (device checklist)"; exit 3 ;; esac; fi
   adb -s $DEV shell input tap $x 88; name="tab$2"; xy="tabbar"
 else
   "$D" cmd bounds >/dev/null

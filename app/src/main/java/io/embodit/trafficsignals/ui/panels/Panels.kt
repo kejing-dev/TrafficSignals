@@ -332,7 +332,6 @@ private fun ColumnScope.LevelList(state: TsUiState, onEvent: (TsEvent) -> Unit) 
 @Composable
 private fun ColumnScope.Review(state: TsUiState, onEvent: (TsEvent) -> Unit) {
     Header(state.t(Ui.reviewTitle), null, "") {
-        Key(state.t(Ui.clear), "review_clear", icon = R.drawable.ic_delete, enabled = state.mistakes.isNotEmpty()) { onEvent(TsEvent.ClearMistakes) }
         Key(state.t(Ui.drill), "review_drill", icon = R.drawable.ic_replay, primary = true, enabled = state.mistakes.isNotEmpty()) { onEvent(TsEvent.Drill) }
     }
     Spacer(Modifier.height(8.dp))
@@ -355,6 +354,12 @@ private fun ColumnScope.Review(state: TsUiState, onEvent: (TsEvent) -> Unit) {
             }
         }
     }
+    // v0.1.4: [清空] asks first (critic R3) and sits in the bottom row, away from [再练错题]: in English the TabBar window
+    // covers the top row up to x = 1199 px in adb coordinates, so the top-row [清空] was not reachable by a real tap there
+    Spacer(Modifier.height(8.dp))
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+        Key(state.t(Ui.clear), "review_clear", icon = R.drawable.ic_delete) { onEvent(TsEvent.AskClear) }
+    }
 }
 
 @Composable
@@ -372,7 +377,8 @@ private fun ColumnScope.Settings(state: TsUiState, onEvent: (TsEvent) -> Unit) {
                 Slider(
                     state.volume,
                     { v: Float -> onEvent(TsEvent.VolumeSet(v)) },
-                    Modifier.width(150.dp).probe("set_volume"),
+                    // critic B2 / B19: SpatialUI's Slider is 32 dp tall by default; the hit area must be 48 dp like every key
+                    Modifier.width(150.dp).height(48.dp).probe("set_volume"),
                     0f..1f,
                     {},
                     colors = SliderDefaults.sliderColors(trackColor = PicoTheme.colorScheme.fillPrimary, progressColor = PicoTheme.colorScheme.interaction, progressHighColor = PicoTheme.colorScheme.interaction),
@@ -437,7 +443,8 @@ private fun QuizTop(state: TsUiState, onEvent: (TsEvent) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth().height(52.dp)) {
         Text(text = title, style = TsType.title, color = PicoTheme.colorScheme.labelPrimary, maxLines = 2, modifier = Modifier.weight(1f), onTextLayout = fits("quiz_title", title))
         Chip("${state.index + 1} / ${state.questions.size}")
-        SoundKey(state, onEvent)
+        // v0.1.4: [声音] left this row: in English the TabBar window covers it in adb coordinates (x < 1199 px, y < 176 px,
+        // q3-3 class); it sits in the next row of the question and in the action row of the verdict
         Key(state.t(Ui.home), "quiz_home", icon = R.drawable.ic_home) { onEvent(TsEvent.Home) }
     }
 }
@@ -450,8 +457,10 @@ private fun ColumnScope.Question(state: TsUiState, onEvent: (TsEvent) -> Unit) {
     Spacer(Modifier.height(6.dp))
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().height(52.dp)) {
         Chip(state.f(Ui.yourLane, Content.lane[state.lane]!!.of(state.zh)), TsColors.InteractionFill, TsColors.Ink)
-        if (state.phase == Phase.SWITCHING) Text(text = state.t(Ui.switching), style = TsType.body, color = PicoTheme.colorScheme.labelPrimary)
-        Spacer(Modifier.weight(1f))
+        // v0.1.4: [声音] joined this row, so "Changing lane…" takes the free width (two lines if it must) instead of squeezing the keys
+        if (state.phase == Phase.SWITCHING) Text(text = state.t(Ui.switching), style = TsType.body, color = PicoTheme.colorScheme.labelPrimary, maxLines = 2, modifier = Modifier.weight(1f), onTextLayout = fits("quiz_switching", state.t(Ui.switching)))
+        else Spacer(Modifier.weight(1f))
+        SoundKey(state, onEvent)
         Key(state.t(Ui.hint), "quiz_hint", icon = R.drawable.ic_lightbulb, enabled = watching, outline = if (state.hint) PicoTheme.colorScheme.interaction else null) { onEvent(TsEvent.Hint) }
         Key(state.t(Ui.replay), "quiz_replay", icon = R.drawable.ic_replay, enabled = state.phase != Phase.SWITCHING) { onEvent(TsEvent.Replay) }
     }
@@ -530,7 +539,9 @@ private fun ColumnScope.Result(state: TsUiState, onEvent: (TsEvent) -> Unit) {
         }
     }
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End)) {
-        Key(state.t(Ui.again), "result_again", icon = R.drawable.ic_refresh) { onEvent(TsEvent.Again) }
+        // critic B1 (D43): never a key that does nothing; the drill replays this round, so this is only a guard
+        if (!state.canAgain) Text(text = state.t(Ui.drillDone), style = TsType.label, color = PicoTheme.colorScheme.labelPrimary, maxLines = 1, modifier = Modifier.align(Alignment.CenterVertically), onTextLayout = fits("result_again_why", state.t(Ui.drillDone)))
+        Key(state.t(Ui.again), "result_again", icon = R.drawable.ic_refresh, enabled = state.canAgain) { onEvent(TsEvent.Again) }
         if (state.level in 1 until Levels.COUNT) Key(state.t(Ui.nextLevel), "result_next", icon = R.drawable.ic_arrow_forward, primary = true) { onEvent(TsEvent.NextLevel) }
         else Key(state.t(Ui.toReview), "result_review", icon = R.drawable.ic_menu_book, primary = true) { onEvent(TsEvent.OpenReview) }
     }
@@ -587,6 +598,8 @@ private fun ColumnScope.Verdict(state: TsUiState, onEvent: (TsEvent) -> Unit) {
         Spacer(Modifier.height(12.dp))
         val last = state.index + 1 >= state.questions.size
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End)) {
+            SoundKey(state, onEvent)
+            Spacer(Modifier.weight(1f))
             Key(state.t(Ui.breakdown), "verdict_breakdown", icon = R.drawable.ic_format_list_numbered) { onEvent(TsEvent.Breakdown) }
             if (state.level != Levels.LANE_LEVEL && io.embodit.trafficsignals.domain.nextAskableLane(q.copy(lane = state.lane)) != null) {
                 Key(state.t(Ui.otherLane), "verdict_lane", icon = R.drawable.ic_swap_horiz) { onEvent(TsEvent.SwitchLane) }
@@ -748,6 +761,7 @@ private fun ColumnScope.Confirm(state: TsUiState, onEvent: (TsEvent) -> Unit) {
             state.screen == Screen.BLOCKED -> state.t(Ui.blockedTitle) to state.f(Ui.blockedBody, state.blockReason ?: "?")
             state.dialog == Dialog.EXIT -> state.t(Ui.exitTitle) to state.t(Ui.exitBody)
             state.dialog == Dialog.RESET -> state.t(Ui.resetTitle) to state.t(Ui.resetBody)
+            state.dialog == Dialog.CLEAR -> state.t(Ui.clearTitle) to state.f(Ui.clearBody, state.mistakes.size)
             else -> state.t(Ui.leaveTitle) to state.t(Ui.leaveBody)
         }
     Spacer(Modifier.weight(1f))
@@ -765,6 +779,10 @@ private fun ColumnScope.Confirm(state: TsUiState, onEvent: (TsEvent) -> Unit) {
             state.dialog == Dialog.RESET -> {
                 Key(state.t(Ui.cancel), "dialog_cancel", icon = R.drawable.ic_close, height = 56.dp, large = true) { onEvent(TsEvent.CloseDialog) }
                 Key(state.t(Ui.reset), "dialog_reset", icon = R.drawable.ic_delete, danger = true, height = 56.dp, large = true) { onEvent(TsEvent.ResetProgress) }
+            }
+            state.dialog == Dialog.CLEAR -> {
+                Key(state.t(Ui.cancel), "dialog_cancel", icon = R.drawable.ic_close, height = 56.dp, large = true) { onEvent(TsEvent.CloseDialog) }
+                Key(state.t(Ui.clear), "dialog_clear", icon = R.drawable.ic_delete, danger = true, height = 56.dp, large = true) { onEvent(TsEvent.ClearMistakes) }
             }
             else -> {
                 Key(state.t(Ui.leave), "dialog_leave", icon = R.drawable.ic_home, height = 56.dp, large = true) { onEvent(TsEvent.Leave) }

@@ -50,6 +50,8 @@ sealed interface TsEvent {
     data object NextLesson : TsEvent
     data class OpenLevel(val level: Int) : TsEvent
     data object Drill : TsEvent
+    /** [清空] on the mistakes book: asks first (D44, critic R3); [清空] in the dialog sends [ClearMistakes]. */
+    data object AskClear : TsEvent
     data object ClearMistakes : TsEvent
     data object Start : TsEvent
     data class Pick(val answer: Answer) : TsEvent
@@ -104,6 +106,8 @@ object TsController {
     private var timerJob: Job? = null
     private var deadlineLeftMs = 0L
     private var deadlineAtMs = 0L
+    /** The clock the L6 timer reads (tests move it by hand). */
+    internal var now: () -> Long = { SystemClock.elapsedRealtime() }
     private var rnd = Random(SystemClock.elapsedRealtime())
     private var started = false
     private var doneWhileAsked = false
@@ -165,13 +169,20 @@ object TsController {
             is TsEvent.LessonAt -> if (s.screen == Screen.LESSON && s.lessonPlaying && s.lessonStep != e.step) _state.value = s.copy(lessonStep = e.step)
             is TsEvent.OpenLevel -> openLevel(e.level, Levels.build(e.level, rnd))
             TsEvent.Drill -> if (s.mistakes.isNotEmpty()) openLevel(0, Levels.drill(s.mistakes, rnd))
+            TsEvent.AskClear -> if (s.mistakes.isNotEmpty()) set("clear-ask") { it.copy(dialog = Dialog.CLEAR) }
             TsEvent.ClearMistakes -> {
                 store?.mistakes = emptyList()
-                set("clear") { it.copy(mistakes = emptyList()) }
+                set("clear") { it.copy(mistakes = emptyList(), dialog = if (it.dialog == Dialog.CLEAR) Dialog.NONE else it.dialog) }
             }
             TsEvent.Start -> if (s.screen == Screen.INTRO) beginQuestion(0, "start")
             is TsEvent.Pick -> pick(e.answer)
-            TsEvent.Replay -> if (s.screen == Screen.QUIZ) set("replay") { it.copy(gestureEpoch = it.gestureEpoch + 1) }
+            TsEvent.Replay ->
+                if (s.screen == Screen.QUIZ) {
+                    // critic R1: the L6 clock runs only while the signal is over and the answers are up; the replay's end
+                    // starts a full 5 s again (a clock left running ran out in the middle of the replay)
+                    stopTimer()
+                    set("replay") { it.copy(gestureEpoch = it.gestureEpoch + 1) }
+                }
             TsEvent.Hint -> if (s.screen == Screen.QUIZ && s.phase == Phase.WATCH) set("hint") { it.copy(hint = !it.hint) }
             TsEvent.NextQuestion -> nextQuestion()
             TsEvent.SwitchLane -> {
@@ -195,7 +206,8 @@ object TsController {
                     gestureDone()
                 }
             }
-            TsEvent.Again -> openLevel(s.level, if (s.level == 0) Levels.drill(s.mistakes, rnd) else Levels.build(s.level, rnd))
+            // critic B1: a drill that cleared the book has no mistakes left to draw from, so [再来一次] replays this round's questions
+            TsEvent.Again -> openLevel(s.level, againQuestions(s))
             TsEvent.NextLevel -> if (s.level in 1 until Levels.COUNT) onEvent(TsEvent.OpenLevel(s.level + 1)) else onEvent(TsEvent.OpenReview)
             is TsEvent.Lang -> {
                 store?.zh = e.zh
@@ -234,13 +246,16 @@ object TsController {
             }
             TsEvent.Exit -> exit()
             TsEvent.Resume -> {
-                // the officer starts the signal again (it was frozen while away); the L6 clock continues
-                set("resume") { it.copy(paused = false, gestureEpoch = if (it.screen == Screen.QUIZ && it.phase == Phase.WATCH) it.gestureEpoch + 1 else it.gestureEpoch) }
-                resumeTimer()
+                // the officer starts the signal again (it was frozen while away); its end starts a full L6 clock (critic R1:
+                // the old clock is not continued, it would run out in the middle of the replay)
+                val replays = s.screen == Screen.QUIZ && s.phase == Phase.WATCH
+                if (replays) stopTimer()
+                set("resume") { it.copy(paused = false, gestureEpoch = if (replays) it.gestureEpoch + 1 else it.gestureEpoch) }
             }
             is TsEvent.Background ->
                 if (e.inBackground) {
-                    pauseTimer()
+                    // away (app in the background, window minimised or closed): the clock stops, [继续] replays the signal
+                    stopTimer()
                     if (s.screen != Screen.STARTING) set("background") { it.copy(paused = true) }
                 }
             TsEvent.SceneReady -> if (s.screen == Screen.STARTING) set("ready") { it.copy(screen = Screen.HOME, sceneReady = true) } else set("ready") { it.copy(sceneReady = true) }
@@ -289,7 +304,10 @@ object TsController {
             why,
         )
 
-    /** The window's × during a timed question: the answers are gone, so the clock waits (D41: controls follow their window). */
+    /**
+     * The window's × (ON_DESTROY) or − (ON_STOP, critic R4) during a timed question: the answers are gone, so the clock
+     * stops (D41: controls follow their window); [继续] after reopening replays the signal and its end starts a full 5 s.
+     */
     fun onWindowClosed() {
         val s = _state.value
         if (s.screen == Screen.QUIZ && s.timed && s.phase == Phase.WATCH && !s.paused) {
@@ -298,8 +316,12 @@ object TsController {
         }
     }
 
+    /** What [再来一次] plays: a new draw of the level, or for the drill this round's questions again (critic B1). */
+    private fun againQuestions(s: TsUiState): List<Question> =
+        if (s.level == 0) s.questions.shuffled(rnd).ifEmpty { Levels.drill(s.mistakes, rnd) } else Levels.build(s.level, rnd)
+
     private fun openLevel(level: Int, questions: List<Question>) {
-        if (questions.isEmpty()) return
+        if (questions.isEmpty()) return TsLog.w("LEVEL $level: no questions, nothing opened")
         stopTimer()
         set("level") {
             it.copy(screen = Screen.INTRO, level = level, questions = questions, index = 0, outcomes = emptyList(), phase = Phase.WATCH, lane = questions.first().lane, yours = null, hint = false, demo = false, breakdown = false, dialog = Dialog.NONE)
@@ -390,6 +412,10 @@ object TsController {
     val clockRunning: Boolean
         get() = timerJob != null
 
+    /** Milliseconds left on the L6 clock (running or held); 0 = no clock (tests, QA). */
+    val clockLeftMs: Long
+        get() = if (timerJob != null) (deadlineAtMs - now()).coerceAtLeast(0L) else deadlineLeftMs
+
     private fun startTimer(ms: Long) {
         deadlineLeftMs = ms
         resumeTimer()
@@ -397,11 +423,11 @@ object TsController {
 
     private fun resumeTimer() {
         if (deadlineLeftMs <= 0L || timerJob != null) return
-        deadlineAtMs = SystemClock.elapsedRealtime() + deadlineLeftMs
+        deadlineAtMs = now() + deadlineLeftMs
         timerJob =
             scope.launch {
                 while (true) {
-                    val left = deadlineAtMs - SystemClock.elapsedRealtime()
+                    val left = deadlineAtMs - now()
                     countdown.floatValue = (left / (Levels.TIMED_SEC * 1000f)).coerceIn(0f, 1f)
                     if (left <= 0) break
                     delay(50)
@@ -414,7 +440,7 @@ object TsController {
 
     private fun pauseTimer() {
         val j = timerJob ?: return
-        deadlineLeftMs = (deadlineAtMs - SystemClock.elapsedRealtime()).coerceAtLeast(1L)
+        deadlineLeftMs = (deadlineAtMs - now()).coerceAtLeast(1L)
         j.cancel()
         timerJob = null
     }

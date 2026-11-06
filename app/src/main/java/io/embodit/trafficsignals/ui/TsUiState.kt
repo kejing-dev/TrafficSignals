@@ -14,7 +14,7 @@ enum class Screen { STARTING, HOME, LESSONS, LEVELS, REVIEW, SETTINGS, LESSON, I
 /** Phase of a quiz question (S6 / S7 / S8 / S9 / S14, plus the unscored demo verdict after a lane switch). */
 enum class Phase { WATCH, CORRECT, WRONG, TIMEOUT, SWITCHING, DEMO }
 
-enum class Dialog { NONE, LEAVE, EXIT, RESET }
+enum class Dialog { NONE, LEAVE, EXIT, RESET, CLEAR }
 
 /** What an answer key shows. Only a judged question may mark the keys: never while it can still be answered (QA q3-1). */
 enum class KeyMark { NONE, RIGHT, WRONG }
@@ -81,6 +81,10 @@ data class TsUiState(
     val judged: Boolean
         get() = screen == Screen.QUIZ && phase in setOf(Phase.CORRECT, Phase.WRONG, Phase.TIMEOUT, Phase.DEMO)
 
+    /** [再来一次] on the result page has something to play (critic B1: never a key that does nothing, D43). */
+    val canAgain: Boolean
+        get() = level != 0 || questions.isNotEmpty() || mistakes.isNotEmpty()
+
     val timed: Boolean
         get() = level == io.embodit.trafficsignals.domain.Levels.TIMED_LEVEL
 
@@ -132,6 +136,7 @@ data class TsUiState(
             if (dialog == Dialog.LEAVE) append("+S12")
             if (dialog == Dialog.EXIT) append("+EXIT")
             if (dialog == Dialog.RESET) append("+RESET")
+            if (dialog == Dialog.CLEAR) append("+CLEAR")
             if (paused) append("+S18")
             if (breakdown) append("+S4")
             if (!zh) append("+S15")
