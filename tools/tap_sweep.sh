@@ -17,7 +17,7 @@ tab() { if [ "${EN:-0}" = 1 ]; then case "$1" in 1) x=360 ;; 2) x=640 ;; 4) x=10
 # EN=1: run the whole sweep in English (the toggles end on EN)
 if [ "${EN:-0}" = 1 ]; then L1=lang_0; L2=lang_1; S1=set_lang_0; S2=set_lang_1; else L1=lang_1; L2=lang_0; S1=set_lang_1; S2=set_lang_0; fi
 page home; t $L1; t $L2; t sound; t sound; t card_review
-page review_empty; "$D" cmd 'seedMistakes 3' >/dev/null; sleep 3; "$D" cmd bounds >/dev/null; sleep 1; t review_clear; t dialog_cancel; t review_drill
+page review_empty; "$D" cmd clear >/dev/null; sleep 3; "$D" cmd bounds >/dev/null; sleep 1; t review_go; "$D" cmd 'state S11' >/dev/null; sleep 3; "$D" cmd 'seedMistakes 3' >/dev/null; sleep 3; "$D" cmd bounds >/dev/null; sleep 1; t review_clear; t dialog_cancel; t review_drill
 page drill_intro; t sound; t sound; t quiz_back
 tab 1; page lessons; t lesson_0; page lesson0; t lesson_next; t lesson_prev; t lesson_play; t lesson_nextlesson
 page lesson; t step_0; t lesson_next; t lesson_prev; t lesson_play; t angle_1; t angle_0; t lesson_speed_1; t lesson_speed_0; t lesson_back_list

@@ -14,6 +14,12 @@ https://claude.ai/artifact/WRybtgGkGfQ15wFNfjZ51i, sample https://claude.ai/arti
 Scaffold: `pico-cli project create --sdk-type spatial --template stage`, then the panel pool, head tracker, theme,
 fonts and debug receiver ported from Rehearsal Hall (kejing-dev/RehearsalHall), the thumbstick from Figure Model.
 
+**v0.1.5 (QA round 5, D44 short pages).** Every page keeps blank bands <= 25 % of the window (QA's `blank_measure.py`):
+confirmations are one template (136 dp icon disc, 32 sp question, 240 x 72 dp keys, spread over the window), the result page
+is a score disc + the round's / missed questions, the mistakes book shows 1-3 mistakes as mini-map cards and an empty state
+with [路口判官] (`review_go`), level intros list the signals of the level and three reading rules, lessons of <= 4 steps get
+big step cards. Shot / measure: `tools/dev.sh shot NAME DIR` at the fixed head pose, window rect x 725-1891, y 848-1709.
+
 ## Structure
 
 ```

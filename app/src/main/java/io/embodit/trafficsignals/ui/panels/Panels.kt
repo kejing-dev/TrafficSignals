@@ -227,13 +227,25 @@ internal fun WindowPage(state: TsUiState, onEvent: (TsEvent) -> Unit) {
 @Composable
 private fun ColumnScope.Starting(state: TsUiState) {
     Header(state.t(Ui.appName), null, "")
-    Spacer(Modifier.weight(1f))
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.align(Alignment.CenterHorizontally)) {
-        CircularProgressIndicator(modifier = Modifier.size(36.dp), color = PicoTheme.colorScheme.labelPrimary, progressSize = CircularProgressDefaults.circleProgressSize(36.dp))
-        Spacer(Modifier.width(16.dp))
-        Text(text = state.t(Ui.loading), style = TsType.title, color = PicoTheme.colorScheme.labelPrimary)
+    // v0.1.5 (D44 short pages): a big app disc and the loading line centred, the one-liner on the bottom edge
+    Column(modifier = Modifier.fillMaxWidth().weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        BigDisc(R.drawable.ic_traffic, TsColors.InteractionFill, 150.dp)
+        Spacer(Modifier.height(24.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CircularProgressIndicator(modifier = Modifier.size(36.dp), color = PicoTheme.colorScheme.labelPrimary, progressSize = CircularProgressDefaults.circleProgressSize(36.dp))
+            Spacer(Modifier.width(16.dp))
+            Text(text = state.t(Ui.loading), style = TsType.title, color = PicoTheme.colorScheme.labelPrimary)
+        }
     }
-    Spacer(Modifier.weight(1f))
+    Text(text = state.t(Ui.oneLiner), style = TsType.body, color = PicoTheme.colorScheme.labelPrimary, maxLines = 2, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+}
+
+/** v0.1.5 (D44): the big round icon of the short pages (confirmations, results, empty states): ink on a colour fill (D13). */
+@Composable
+private fun BigDisc(icon: Int, fill: Color, size: Dp, name: String? = null) {
+    Box(modifier = Modifier.size(size).clip(CircleShape).background(fill).then(if (name != null) Modifier.probe(name) else Modifier), contentAlignment = Alignment.Center) {
+        Icon(painter = painterResource(icon), contentDescription = null, modifier = Modifier.size(size * 0.6f), tint = TsColors.Ink)
+    }
 }
 
 @Composable
@@ -273,8 +285,9 @@ private fun BigCard(title: String, sub: String, icon: Int, name: String, modifie
     ) {
         Column(modifier = Modifier.fillMaxSize().padding(vertical = 16.dp), horizontalAlignment = Alignment.Start, verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterVertically)) {
             // D13: a blue icon straight on the grey card is about 2:1; the blue goes into a disc with dark ink on it (5.6:1)
-            Box(modifier = Modifier.size(72.dp).clip(CircleShape).background(TsColors.InteractionFill), contentAlignment = Alignment.Center) {
-                Icon(painter = painterResource(icon), contentDescription = null, modifier = Modifier.size(44.dp), tint = TsColors.Ink)
+            // v0.1.5 (D44): 112 dp disc, the card is no longer half empty under its two lines
+            Box(modifier = Modifier.size(112.dp).clip(CircleShape).background(TsColors.InteractionFill), contentAlignment = Alignment.Center) {
+                Icon(painter = painterResource(icon), contentDescription = null, modifier = Modifier.size(64.dp), tint = TsColors.Ink)
             }
             Spacer(Modifier.height(6.dp))
             Text(text = title, style = TsType.title.copy(fontSize = 20.sp, lineHeight = 26.sp), color = PicoTheme.colorScheme.labelPrimary, maxLines = 1, onTextLayout = fits(name, title))
@@ -336,21 +349,45 @@ private fun ColumnScope.Review(state: TsUiState, onEvent: (TsEvent) -> Unit) {
     }
     Spacer(Modifier.height(8.dp))
     if (state.mistakes.isEmpty()) {
-        Spacer(Modifier.weight(1f))
-        Text(text = state.t(Ui.reviewEmpty), style = TsType.title, color = PicoTheme.colorScheme.labelPrimary, modifier = Modifier.align(Alignment.CenterHorizontally))
-        Spacer(Modifier.weight(1f))
+        // v0.1.5 (QA q5-2, D44): a centred empty state with a way out, not one line in an empty window
+        Column(modifier = Modifier.fillMaxWidth().weight(1f), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            BigDisc(R.drawable.ic_menu_book, TsColors.InteractionFill, 140.dp, "review_empty_disc")
+            Spacer(Modifier.height(24.dp))
+            Text(text = state.t(Ui.reviewEmpty), style = TsType.headline, color = PicoTheme.colorScheme.labelPrimary, maxLines = 2, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(), onTextLayout = fits("review_empty", state.t(Ui.reviewEmpty)))
+            Spacer(Modifier.height(10.dp))
+            Text(text = state.t(Ui.reviewEmptyTip), style = TsType.body, color = PicoTheme.colorScheme.labelPrimary, maxLines = 2, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(), onTextLayout = fits("review_empty_tip", state.t(Ui.reviewEmptyTip)))
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            Key(state.t(Ui.judge), "review_go", icon = R.drawable.ic_traffic, primary = true) { onEvent(TsEvent.OpenLevels) }
+        }
         return
     }
-    val groups = state.mistakes.reversed().distinctBy { it.question }.groupBy { it.question.gesture }
-    val rows = groups.flatMap { (g, ms) -> listOf<Any>(g) + ms }
-    LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(14.dp))) {
-        itemsIndexed(rows) { _, r ->
-            if (r is Gesture) {
-                Text(text = Content.gestureName[r]!!.of(state.zh), style = TsType.label, color = PicoTheme.colorScheme.labelPrimary, modifier = Modifier.padding(top = 10.dp, bottom = 2.dp))
-            } else if (r is io.embodit.trafficsignals.domain.Mistake) {
-                val q = r.question
-                val line = state.f(Ui.mistakeLine, Content.facing[q.facing]!!.of(state.zh), Content.side[q.facing.you]!!.of(state.zh), Content.lane[q.lane]!!.of(state.zh), r.yours?.let { Content.answer[it]!!.of(state.zh) } ?: state.t(Ui.timeoutWord))
-                Text(text = line, style = TsType.body, color = PicoTheme.colorScheme.labelPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(vertical = 6.dp))
+    val distinct = state.mistakes.reversed().distinctBy { it.question }
+    if (distinct.size <= 3) {
+        // v0.1.5 (QA q5-2, D44): one to three mistakes are cards with their mini map, centred; the list below only from four
+        val h = when (distinct.size) { 1 -> 172.dp; 2 -> 136.dp; else -> 104.dp }
+        Column(modifier = Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically)) {
+            distinct.forEachIndexed { i, m -> MistakeCard(state, m, h, "mistake_$i") }
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                Icon(painter = painterResource(R.drawable.ic_lightbulb), contentDescription = null, modifier = Modifier.size(20.dp), tint = PicoTheme.colorScheme.labelPrimary)
+                Spacer(Modifier.width(8.dp))
+                Text(text = state.t(Ui.reviewFewTip), style = TsType.body, color = PicoTheme.colorScheme.labelPrimary, maxLines = 2, onTextLayout = fits("review_tip", state.t(Ui.reviewFewTip)))
+            }
+        }
+    } else {
+        val groups = distinct.groupBy { it.question.gesture }
+        val rows = groups.flatMap { (g, ms) -> listOf<Any>(g) + ms }
+        // v0.1.5 (QA q5-2): the list takes its own height and sits in the middle; long lists still scroll in the full height
+        Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+            LazyColumn(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))) {
+                itemsIndexed(rows) { _, r ->
+                    if (r is Gesture) {
+                        Text(text = Content.gestureName[r]!!.of(state.zh), style = TsType.label, color = PicoTheme.colorScheme.labelPrimary, modifier = Modifier.padding(top = 10.dp, bottom = 2.dp))
+                    } else if (r is io.embodit.trafficsignals.domain.Mistake) {
+                        Text(text = state.mistakeLine(r), style = TsType.body, color = PicoTheme.colorScheme.labelPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(vertical = 6.dp))
+                    }
+                }
             }
         }
     }
@@ -359,6 +396,29 @@ private fun ColumnScope.Review(state: TsUiState, onEvent: (TsEvent) -> Unit) {
     Spacer(Modifier.height(8.dp))
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
         Key(state.t(Ui.clear), "review_clear", icon = R.drawable.ic_delete) { onEvent(TsEvent.AskClear) }
+    }
+}
+
+private fun TsUiState.mistakeLine(m: io.embodit.trafficsignals.domain.Mistake): String {
+    val q = m.question
+    return f(Ui.mistakeLine, Content.facing[q.facing]!!.of(zh), Content.side[q.facing.you]!!.of(zh), Content.lane[q.lane]!!.of(zh), m.yours?.let { Content.answer[it]!!.of(zh) } ?: t(Ui.timeoutWord))
+}
+
+@Composable
+private fun MistakeCard(state: TsUiState, m: io.embodit.trafficsignals.domain.Mistake, h: Dp, name: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().height(h).clip(RoundedCornerShape(18.dp)).background(PicoTheme.colorScheme.fillTertiary).padding(12.dp).probe(name),
+    ) {
+        MiniMap(m.question.facing, m.question.lane, Modifier.width((h - 24.dp) * 1.25f).fillMaxHeight())
+        Spacer(Modifier.width(20.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            val g = Content.gestureName[m.question.gesture]!!.of(state.zh)
+            Text(text = g, style = if (h > 120.dp) TsType.headline else TsType.title, color = PicoTheme.colorScheme.labelPrimary, maxLines = 1, onTextLayout = fits("${name}_title", g))
+            Spacer(Modifier.height(6.dp))
+            val line = state.mistakeLine(m)
+            Text(text = line, style = if (h > 120.dp) TsType.title else TsType.body, color = PicoTheme.colorScheme.labelPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis, onTextLayout = fits("${name}_line", line))
+        }
     }
 }
 
@@ -422,12 +482,27 @@ private fun ColumnScope.Intro(state: TsUiState, onEvent: (TsEvent) -> Unit) {
     Header(state.levelTitle(), null, "") {
         SoundKey(state, onEvent)
     }
-    Spacer(Modifier.weight(1f))
-    val goal = if (state.level in 1..6) Content.levelGoal[state.level - 1].of(state.zh) else ""
-    Text(text = goal, style = TsType.headline, color = PicoTheme.colorScheme.labelPrimary, maxLines = 3, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-    Spacer(Modifier.height(12.dp))
-    Text(text = state.f(Ui.questionsN, state.questions.size) + if (state.timed) " · " + state.t(Ui.timedNote) else "", style = TsType.body, color = PicoTheme.colorScheme.labelPrimary, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-    Spacer(Modifier.weight(1f))
+    val goal = if (state.level in 1..6) Content.levelGoal[state.level - 1].of(state.zh) else state.t(Ui.drillGoal)
+    val gestures = state.questions.map { it.gesture }.distinct().sortedBy { it.ordinal }
+    // v0.1.5 (QA q5-4, D44): the goal, the signals this level asks and the three reading rules, spread over the free height
+    Column(modifier = Modifier.fillMaxWidth().weight(1f).padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.SpaceEvenly) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(text = goal, style = TsType.headline, color = PicoTheme.colorScheme.labelPrimary, maxLines = 3, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(), onTextLayout = fits("intro_goal", goal))
+            Spacer(Modifier.height(8.dp))
+            Text(text = state.f(Ui.questionsN, state.questions.size) + if (state.timed) " · " + state.t(Ui.timedNote) else "", style = TsType.body, color = PicoTheme.colorScheme.labelPrimary, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        }
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.probe("intro_signals")) {
+            Text(text = state.t(Ui.introSignals), style = TsType.label, color = PicoTheme.colorScheme.labelPrimary)
+            gestures.chunked(4).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { row.forEach { Chip(Content.gestureName[it]!!.of(state.zh)) } }
+            }
+        }
+        Column(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(PicoTheme.colorScheme.fillTertiary).padding(horizontal = 20.dp, vertical = 10.dp).probe("intro_rules")) {
+            Explain("1", state.t(Ui.rule1))
+            Explain("2", state.t(Ui.rule2))
+            Explain("3", state.t(Ui.rule3))
+        }
+    }
     // q3-3: [返回] sits with [开始], out of the corner the TabBar and system windows cover
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Key(state.t(Ui.back), "quiz_back", icon = R.drawable.ic_chevron_left, height = 56.dp) { onEvent(TsEvent.OpenLevels) }
@@ -468,7 +543,7 @@ private fun ColumnScope.Question(state: TsUiState, onEvent: (TsEvent) -> Unit) {
         Text(text = state.f(Ui.hintLine, Content.facing[q.facing]!!.of(state.zh), Content.side[q.facing.you]!!.of(state.zh)), style = TsType.body, color = PicoTheme.colorScheme.labelPrimary, maxLines = 1, modifier = Modifier.padding(top = 4.dp))
     }
     Spacer(Modifier.weight(1f))
-    Text(text = state.t(Ui.askLane), style = TsType.headline, color = PicoTheme.colorScheme.labelPrimary, maxLines = 2, modifier = Modifier.align(Alignment.CenterHorizontally), onTextLayout = fits("quiz_ask", state.t(Ui.askLane)))
+    Text(text = state.t(Ui.askLane), style = TsType.headline.copy(fontSize = 30.sp, lineHeight = 38.sp), color = PicoTheme.colorScheme.labelPrimary, maxLines = 2, modifier = Modifier.align(Alignment.CenterHorizontally), onTextLayout = fits("quiz_ask", state.t(Ui.askLane)))
     Spacer(Modifier.weight(1f))
     @Composable
     fun RowScope.answer(a: Answer, w: Float = 1f) {
@@ -479,7 +554,7 @@ private fun ColumnScope.Question(state: TsUiState, onEvent: (TsEvent) -> Unit) {
                 KeyMark.WRONG -> PicoTheme.colorScheme.error
                 KeyMark.NONE -> null
             }
-        Key(Content.answer[a]!!.of(state.zh), "answer_${a.id}", height = 60.dp, enabled = watching || outline != null, outline = outline, fill = true, modifier = Modifier.weight(w)) { onEvent(TsEvent.Pick(a)) }
+        Key(Content.answer[a]!!.of(state.zh), "answer_${a.id}", height = 72.dp, enabled = watching || outline != null, outline = outline, fill = true, modifier = Modifier.weight(w)) { onEvent(TsEvent.Pick(a)) }
     }
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
         Text(text = state.t(Ui.groupMove), style = TsType.label, color = PicoTheme.colorScheme.labelPrimary, modifier = Modifier.width(48.dp))
@@ -513,28 +588,44 @@ private fun ColumnScope.Result(state: TsUiState, onEvent: (TsEvent) -> Unit) {
     Header(state.f(Ui.scoreTitle, score, state.outcomes.size), null, "") {
         Key(state.t(Ui.home), "result_home", icon = R.drawable.ic_home) { onEvent(TsEvent.Home) }
     }
-    Spacer(Modifier.height(6.dp))
     val missed = state.outcomes.filter { !it.ok }
-    if (missed.isEmpty()) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(painter = painterResource(R.drawable.ic_check_circle), contentDescription = null, modifier = Modifier.size(28.dp), tint = PicoTheme.colorScheme.labelPrimary)
-            Spacer(Modifier.width(8.dp))
-            Text(text = state.t(Ui.allRight), style = TsType.title, color = PicoTheme.colorScheme.labelPrimary)
+    val allRight = missed.isEmpty()
+    val rows = if (allRight) state.outcomes else missed
+    // v0.1.5 (QA q5-1, D44): a big score block on the left; on the right the round's questions (all right) or the missed
+    // ones, centred in the free height, so a short list never leaves a blank band
+    Row(modifier = Modifier.fillMaxWidth().weight(1f).padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(28.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(modifier = Modifier.width(250.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            if (allRight) {
+                BigDisc(R.drawable.ic_check_circle, PicoTheme.colorScheme.passable, 150.dp, "result_badge")
+            } else {
+                val s = "$score/${state.outcomes.size}"
+                Box(modifier = Modifier.size(150.dp).clip(CircleShape).background(TsColors.InteractionFill).probe("result_badge"), contentAlignment = Alignment.Center) {
+                    Text(text = s, style = TsType.headline.copy(fontSize = 40.sp, lineHeight = 48.sp), color = TsColors.Ink, maxLines = 1, onTextLayout = fits("result_score", s))
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+            val line = if (allRight) state.t(Ui.allRight) else state.f(Ui.missedN, missed.size)
+            Text(text = line, style = TsType.headline, color = PicoTheme.colorScheme.labelPrimary, maxLines = 3, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(), onTextLayout = fits("result_line", line))
         }
-        Spacer(Modifier.weight(1f))
-    } else {
-        Text(text = state.t(Ui.wrongList), style = TsType.label, color = PicoTheme.colorScheme.labelPrimary)
-        LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(14.dp))) {
-            itemsIndexed(missed) { _, o ->
-                val q = o.question
-                Text(
-                    text = Content.gestureName[q.gesture]!!.of(state.zh) + " · " + Content.facing[q.facing]!!.of(state.zh) + " · " + Content.lane[q.lane]!!.of(state.zh) + " → " + Content.answer[o.correct]!!.of(state.zh),
-                    style = TsType.body,
-                    color = PicoTheme.colorScheme.labelPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(vertical = 4.dp),
-                )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = if (allRight) state.t(Ui.roundList) else state.t(Ui.wrongList), style = TsType.label, color = PicoTheme.colorScheme.labelPrimary)
+            Spacer(Modifier.height(6.dp))
+            val few = rows.size <= 4
+            LazyColumn(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).probe("result_list")) {
+                itemsIndexed(rows) { _, o ->
+                    val q = o.question
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = if (few) 10.dp else 4.dp)) {
+                        Icon(painter = painterResource(if (o.ok) R.drawable.ic_check_circle else R.drawable.ic_cancel), contentDescription = null, modifier = Modifier.size(if (few) 24.dp else 18.dp), tint = PicoTheme.colorScheme.labelPrimary)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = Content.gestureName[q.gesture]!!.of(state.zh) + " · " + Content.facing[q.facing]!!.of(state.zh) + " · " + Content.lane[q.lane]!!.of(state.zh) + " → " + Content.answer[o.correct]!!.of(state.zh),
+                            style = if (few) TsType.title else TsType.body,
+                            color = PicoTheme.colorScheme.labelPrimary,
+                            maxLines = if (few) 2 else 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
             }
         }
     }
@@ -688,7 +779,10 @@ private fun ColumnScope.Lesson(state: TsUiState, onEvent: (TsEvent) -> Unit) {
             val inView = row != null && row.offset >= 0 && row.offset + row.size <= info.viewportEndOffset
             if (!inView) runCatching { list.animateScrollToItem((state.lessonStep - 1).coerceAtLeast(0)) }
         }
-        LazyColumn(state = list, modifier = Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(14.dp))) {
+        // v0.1.5 (QA q5-4, D44): the list takes its own height and sits in the middle; a lesson of <= 4 steps gets big cards
+        val few = steps.size <= 4
+        Box(modifier = Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+        LazyColumn(state = list, modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))) {
             itemsIndexed(steps) { i, tr ->
                 val current = i == state.lessonStep
                 Row(
@@ -700,16 +794,17 @@ private fun ColumnScope.Lesson(state: TsUiState, onEvent: (TsEvent) -> Unit) {
                             .background(if (current) PicoTheme.colorScheme.fillSecondary else Color.Transparent)
                             .then(if (current) Modifier.border(2.dp, PicoTheme.colorScheme.interaction, RoundedCornerShape(14.dp)) else Modifier)
                             .clickable { onEvent(TsEvent.LessonStep(i)) }
-                            .padding(horizontal = 10.dp, vertical = 8.dp)
+                            .padding(horizontal = if (few) 16.dp else 10.dp, vertical = if (few) 18.dp else 8.dp)
                             .probe("step_$i"),
                 ) {
-                    Text(text = "${i + 1}", style = TsType.title, color = PicoTheme.colorScheme.labelPrimary, modifier = Modifier.width(26.dp))
+                    Text(text = "${i + 1}", style = if (few) TsType.headline else TsType.title, color = PicoTheme.colorScheme.labelPrimary, modifier = Modifier.width(if (few) 34.dp else 26.dp))
                     Column {
-                        Text(text = tr.of(state.zh), style = TsType.body, color = PicoTheme.colorScheme.labelPrimary, maxLines = if (current) 3 else 2, overflow = TextOverflow.Ellipsis)
+                        Text(text = tr.of(state.zh), style = if (few) TsType.title else TsType.body, color = PicoTheme.colorScheme.labelPrimary, maxLines = if (current || few) 3 else 2, overflow = TextOverflow.Ellipsis)
                         if (!state.zh) Text(text = tr.zh, style = TsType.label.copy(fontSize = androidx.compose.ui.unit.TextUnit(12f, androidx.compose.ui.unit.TextUnitType.Sp)), color = PicoTheme.colorScheme.labelPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }
+        }
         }
         if (g != null) {
             Spacer(Modifier.height(4.dp))
@@ -764,33 +859,48 @@ private fun ColumnScope.Confirm(state: TsUiState, onEvent: (TsEvent) -> Unit) {
             state.dialog == Dialog.CLEAR -> state.t(Ui.clearTitle) to state.f(Ui.clearBody, state.mistakes.size)
             else -> state.t(Ui.leaveTitle) to state.t(Ui.leaveBody)
         }
-    Spacer(Modifier.weight(1f))
-    Text(text = title, style = TsType.headline, color = PicoTheme.colorScheme.labelPrimary, maxLines = 2, modifier = Modifier.align(Alignment.CenterHorizontally), onTextLayout = fits("dialog_title", title))
-    Spacer(Modifier.height(12.dp))
-    Text(text = body, style = TsType.body, color = PicoTheme.colorScheme.labelPrimary, maxLines = 3, modifier = Modifier.align(Alignment.CenterHorizontally), onTextLayout = fits("dialog_body", body))
-    Spacer(Modifier.height(32.dp))
-    Row(modifier = Modifier.align(Alignment.CenterHorizontally), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+    val (icon, fill) =
         when {
-            state.screen == Screen.BLOCKED -> Key(state.t(Ui.exit), "dialog_exit", icon = R.drawable.ic_logout, danger = true, height = 56.dp, large = true) { onEvent(TsEvent.Exit) }
-            state.dialog == Dialog.EXIT -> {
-                Key(state.t(Ui.cancel), "dialog_cancel", icon = R.drawable.ic_close, height = 56.dp, large = true) { onEvent(TsEvent.CloseDialog) }
-                Key(state.t(Ui.exit), "dialog_exit", icon = R.drawable.ic_logout, danger = true, height = 56.dp, large = true) { onEvent(TsEvent.Exit) }
-            }
-            state.dialog == Dialog.RESET -> {
-                Key(state.t(Ui.cancel), "dialog_cancel", icon = R.drawable.ic_close, height = 56.dp, large = true) { onEvent(TsEvent.CloseDialog) }
-                Key(state.t(Ui.reset), "dialog_reset", icon = R.drawable.ic_delete, danger = true, height = 56.dp, large = true) { onEvent(TsEvent.ResetProgress) }
-            }
-            state.dialog == Dialog.CLEAR -> {
-                Key(state.t(Ui.cancel), "dialog_cancel", icon = R.drawable.ic_close, height = 56.dp, large = true) { onEvent(TsEvent.CloseDialog) }
-                Key(state.t(Ui.clear), "dialog_clear", icon = R.drawable.ic_delete, danger = true, height = 56.dp, large = true) { onEvent(TsEvent.ClearMistakes) }
-            }
-            else -> {
-                Key(state.t(Ui.leave), "dialog_leave", icon = R.drawable.ic_home, height = 56.dp, large = true) { onEvent(TsEvent.Leave) }
-                Key(state.t(Ui.keepGoing), "dialog_stay", icon = R.drawable.ic_play_arrow, primary = true, height = 56.dp, large = true) { onEvent(TsEvent.CloseDialog) }
+            state.screen == Screen.BLOCKED -> R.drawable.ic_cancel to PicoTheme.colorScheme.error
+            state.dialog == Dialog.EXIT -> R.drawable.ic_logout to PicoTheme.colorScheme.error
+            state.dialog == Dialog.RESET -> R.drawable.ic_refresh to PicoTheme.colorScheme.error
+            state.dialog == Dialog.CLEAR -> R.drawable.ic_delete to PicoTheme.colorScheme.error
+            else -> R.drawable.ic_home to TsColors.InteractionFill
+        }
+    val keyW = 240.dp
+    val keyH = 72.dp
+    // v0.1.5 (QA q5-3, D44): one template for every confirmation: a big icon on top, the question in 32 sp and its line in
+    // 20 sp in the middle, 72 dp keys at the bottom, spread over the whole window (no small card with wide margins)
+    Column(modifier = Modifier.fillMaxWidth().weight(1f).padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.SpaceBetween) {
+        BigDisc(icon, fill, 136.dp, "dialog_icon")
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(text = title, style = TsType.headline.copy(fontSize = 32.sp, lineHeight = 40.sp), color = PicoTheme.colorScheme.labelPrimary, maxLines = 2, textAlign = TextAlign.Center, onTextLayout = fits("dialog_title", title))
+            Spacer(Modifier.height(14.dp))
+            Text(text = body, style = TsType.body.copy(fontSize = 20.sp, lineHeight = 28.sp), color = PicoTheme.colorScheme.labelPrimary, maxLines = 3, textAlign = TextAlign.Center, onTextLayout = fits("dialog_body", body))
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+            val m = Modifier.width(keyW)
+            when {
+                state.screen == Screen.BLOCKED -> Key(state.t(Ui.exit), "dialog_exit", icon = R.drawable.ic_logout, danger = true, height = keyH, large = true, fill = true, modifier = m) { onEvent(TsEvent.Exit) }
+                state.dialog == Dialog.EXIT -> {
+                    Key(state.t(Ui.cancel), "dialog_cancel", icon = R.drawable.ic_close, height = keyH, large = true, fill = true, modifier = m) { onEvent(TsEvent.CloseDialog) }
+                    Key(state.t(Ui.exit), "dialog_exit", icon = R.drawable.ic_logout, danger = true, height = keyH, large = true, fill = true, modifier = m) { onEvent(TsEvent.Exit) }
+                }
+                state.dialog == Dialog.RESET -> {
+                    Key(state.t(Ui.cancel), "dialog_cancel", icon = R.drawable.ic_close, height = keyH, large = true, fill = true, modifier = m) { onEvent(TsEvent.CloseDialog) }
+                    Key(state.t(Ui.reset), "dialog_reset", icon = R.drawable.ic_delete, danger = true, height = keyH, large = true, fill = true, modifier = m) { onEvent(TsEvent.ResetProgress) }
+                }
+                state.dialog == Dialog.CLEAR -> {
+                    Key(state.t(Ui.cancel), "dialog_cancel", icon = R.drawable.ic_close, height = keyH, large = true, fill = true, modifier = m) { onEvent(TsEvent.CloseDialog) }
+                    Key(state.t(Ui.clear), "dialog_clear", icon = R.drawable.ic_delete, danger = true, height = keyH, large = true, fill = true, modifier = m) { onEvent(TsEvent.ClearMistakes) }
+                }
+                else -> {
+                    Key(state.t(Ui.leave), "dialog_leave", icon = R.drawable.ic_home, height = keyH, large = true, fill = true, modifier = m) { onEvent(TsEvent.Leave) }
+                    Key(state.t(Ui.keepGoing), "dialog_stay", icon = R.drawable.ic_play_arrow, primary = true, height = keyH, large = true, fill = true, modifier = m) { onEvent(TsEvent.CloseDialog) }
+                }
             }
         }
     }
-    Spacer(Modifier.weight(1f))
 }
 
 // =============================================================================================
