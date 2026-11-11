@@ -1,6 +1,6 @@
 # Traffic Cop Signals 交警手势
 
-> **v0.1.1 · Pre-release · passed emulator QA, not yet verified on a headset**（预发布 · 模拟器 QA 通过，真机未验证）
+> **v0.1.5 · checked on a PICO headset** · [Release v0.1.5](https://github.com/kejing-dev/TrafficSignals/releases/tag/v0.1.5)（真机看过，正式版）
 
 ![Traffic Cop Signals 交警手势](docs/cover.jpg)
 
@@ -12,54 +12,55 @@
 
 ## English
 
-Sit in the driver's seat at a virtual crossroads. A life-size traffic officer on the centre post turns to a random direction and gives one of the 8 official Chinese traffic police hand signals. Is that signal meant for your lane? Go, stop, pull into the waiting box, slow down, clear the lane or pull over. A PICO OS 6 app built with the PICO Spatial SDK.
+Sit in the driver's seat at a virtual crossroads. A life-size traffic officer on the post at the side of the junction turns to a random direction and gives one of the 8 official Chinese traffic police hand signals. Is that signal meant for your lane? Go, stop, pull into the waiting box, slow down, clear the lane or pull over. A PICO OS 6 app built with the PICO Spatial SDK.
 
-- **Learn the signals**: 9 lessons. Lesson 0 teaches you to read his front, back, left and right; lessons 1–8 cover the 8 signals (stop, go straight, left turn, left turn wait, right turn, change lane, slow down, pull over). The officer demonstrates 6 m ahead, step by step, with the official wording of each step, four viewing angles, 0.5× speed and a thumbstick to turn him around
+- **Learn the signals**: 9 lessons. Lesson 0 teaches you to read his front, back, left and right; lessons 1–8 cover the 8 signals (stop, go straight, left turn, left turn wait, right turn, change lane, slow down, pull over). The officer demonstrates on the post ahead of you, step by step, with the official wording of each step, four viewing angles, 0.5× speed and a thumbstick to turn him around
 - **Crossroads judge**: 6 levels, 69 questions: Face to face · On his right · On his left · Any direction · Same signal, other lane · Timed judge (answer within 5 s). All levels are open from the start
 - **Verdict card** explains every answer in three steps: which way he faces → whom the signal releases → which lane you are in. Right answers send your car off along its route, painted on the road ahead of you
 - **[Hint]** stands small signs around the post ("his front / back / left / right")
 - **Mistake book** groups wrong answers by signal and turns them into a practice round
-- Settings: language (Chinese / English), sound, officer size (life-size or 1.5×), speed, re-centre the crossroads, reset progress, quit app
+- Settings: language (Chinese / English), sound and volume, officer size (life-size or 1.5×), speed, re-centre the crossroads, reset progress, quit app
 - Offline, no account, no permissions
 
-### Screenshots (emulator, Chinese UI)
+### Screenshots (v0.1.5, emulator)
 
 | | |
 |---|---|
-| ![Lesson](docs/01-lesson.jpg) Learn: the left-turn signal frozen step by step, with the official wording on the right | ![Home](docs/02-home.jpg) Home: learn, crossroads judge, mistake book; language, sound, 1.5× size and slow motion |
-| ![Hint](docs/03-hint.jpg) Read his position first: [Hint] stands "his front / back / left / right" signs around the post | ![Verdict](docs/04-verdict.jpg) Verdict card: right, and why, in three steps |
-| ![Waiting box](docs/05-waitbox.jpg) Left turn wait: answer "pull into the waiting box" and your car slides over the zebra crossing into the box | ![Mistakes](docs/06-mistakes.jpg) Mistake book: wrong answers grouped by signal, one tap to practise them again |
+| ![Start](docs/01-start.jpg) Start: the officer stands on the post at the left of the junction; the window is in front of you, your own bonnet below | ![Home](docs/02-home.jpg) Home: learn, crossroads judge, mistake book; language, sound and re-centre along the bottom |
+| ![Lesson](docs/03-lesson.jpg) Lesson 1 "Stop": the officer demonstrates step by step, each step with the official wording | ![Result](docs/04-result.jpg) Level 1 result 9/10: score on the left, the missed question and its right answer on the right |
+| ![Mistakes](docs/05-mistakes.jpg) Mistake book: wrong answers kept by signal, one tap to practise again | ![Drill](docs/06-drill.jpg) Mistake drill intro: answer them again, right answers leave the book |
+| ![Question (EN)](docs/en-01-question.jpg) English UI: watch the signal, then pick what your lane should do | ![Settings (EN)](docs/en-04-settings.jpg) English settings: language, sound, volume, officer size, speed, re-centre, reset, quit |
 
-Screenshots come from the PICO emulator with states pinned by debug broadcasts. The side panels (verdict card at +36°, lesson panel at +30°) sit to your right, so a single forward screenshot only catches part of them; on QA's dedicated shots every panel shows all four rounded corners. The demo video in the release (`TrafficSignals-demo-1080p.mp4`, 58 s) is a native emulator run **driven by debug input — not a recording of real hand gestures or a real person** — and has no sound.
+Screenshots are from the PICO emulator at QA round 6 (v0.1.5). They are rebuilt from the QA report's 640 px copies, so they are softer than the headset view. The QA demo video is a native emulator run **driven by adb taps — not a recording of real hand gestures** — and has no sound.
 
 ### Install
 
 ```bash
-adb install -r TrafficSignals-v0.1.1.apk
+adb install -r TrafficSignals-v0.1.5.apk
 pico-cli app launch io.embodit.trafficsignals
 ```
 
-Get the APK from [Release v0.1.1](https://github.com/kejing-dev/TrafficSignals/releases/tag/v0.1.1). Requires PICO OS 6 (Spatial SDK 6.1.9, minSdk 35).
+Get the APK from [Release v0.1.5](https://github.com/kejing-dev/TrafficSignals/releases/tag/v0.1.5). Requires PICO OS 6 (Spatial SDK 6.1.9, minSdk 35). The release APK is an unsigned `assembleRelease` build for store re-signing; to sideload it yourself, sign it with your own debug key first (`apksigner sign --ks ~/.android/debug.keystore …`) or build `./gradlew assembleDebug`.
 
-### Not yet verified on a headset
+### What changed since v0.1.1
 
-Emulator QA round 2 passed all three gates (no Material components; install + launch + 60 s with no crash / ANR; all 19 states captured and checked in Chinese and English) and confirmed all 7 round-1 findings fixed, including both blockers (the "ghost car" starting from your own seat and covering the panels; English level titles cut off). No headset was connected when this was published, so a person still needs to check on a real PICO:
+- **v0.1.2** One native window: all 2D content in one system window with the SpatialUI TabBar (home / learn / judge / mistakes / settings). The officer starts on the post at the left of the junction instead of on top of you; city image-based lighting so his shirt and skin are no longer washed out.
+- **v0.1.3** Timed level: pausing, the leave dialog or closing the window stops the signal and the 5 s clock and never reveals the answer; volume slider; a rounded bonnet with mirrors for your own car and rounded cars on the road.
+- **v0.1.4** [Again] after a drill that cleared the mistake book replays the round; taller volume slider; [Clear] on the mistake book asks first; system minimise stops the clock like closing the window.
+- **v0.1.5** Result, mistake book, intro, confirm and short lesson pages re-laid out without large empty bands; bigger question line and answer keys.
 
-1. Eye + pinch and controller ray + trigger on every button of P1–P4 and the dialog, especially the 6 answer keys, [Hint] and [Watch again] on P2's second row, and the three keys on P3 (the emulator cannot tap Stage panels).
-2. Ghost car on all four routes (go straight / right / left, pull into the waiting box): no green car body in front of your face or the panels. The right-turn car comes closest (about 5.7 m) and passes behind P3; check it does not dazzle when you look at P3.
-3. Readability of the officer's signals 14 m away: all 8 signals at life size and at 1.5×, each facing once (on the emulator he is about 20 px tall).
-4. [Hint] direction signs: front and back are easy to tell apart in real depth and do not block the officer.
-5. Settings → Quit app → Quit, by hand: the app leaves recents and reopens on a clean home screen.
-6. Cold start once looking down 30° and once looking up 30°: P1 upright, facing you, near your line of sight.
-7. P3 (+36°) and P4 (+30°): comfortable to turn to, buttons reachable.
-8. Sound: 3 minutes with sound on is not annoying; mute is remembered.
+### Verification
+
+- Emulator QA round 6 (v0.1.5) passed all gates: no Material components; install + launch + 60 s with no crash / ANR; 58 Chinese and English screenshots; real taps through the main flow to Quit; 68 / 68 buttons respond in each language, no text overflow logged.
+- The developer installed v0.1.5 on a PICO headset (Swan) and approved it for release on 2026-11-10.
 
 ### Known issues (non-blocking)
 
-1. On the emulator the loading screen (S1) cannot be captured while the Stage builds its scene, so the S1 shot is from QA round 1 (v0.1.1 did not change it). Cold start to the home screen took 25–43 s on a loaded emulator host; the real timing needs a headset.
-2. Screenshots are at the emulator's default 2160 × 2158, not High Definition 2560, cropped to 16:9.
-3. Some lane / direction answers go beyond the official text and follow the rule "if you are not released, you wait" (e.g. a straight-ahead signal while you are in front of him). The verdict card marks each answer "Official" or "Inferred".
-4. The officer model's licence follows the developer's Tripo account plan and has not been confirmed yet (see Credits). Confirm before making this repository public.
+1. **English results page, 5 or more questions**: each row is limited to one line, so the end of "gesture · facing · lane → correct answer" is cut off with an ellipsis (`Panels.kt` result list, `maxLines = 1` when there are more than 4 rows). Chinese fits. Not fixed in this release.
+2. A few pages still have an empty band of 20–24 % of the window between title and content (results 1/1, mistake book with 1 row, question page, settings); all under the 25 % limit.
+3. On the emulator the loading screen (S1) cannot be captured while the Stage builds its scene.
+4. Some lane / direction answers go beyond the official text and follow the rule "if you are not released, you wait"; the verdict card marks each answer "Official" or "Inferred".
+5. The officer model's licence follows the developer's Tripo account plan and has not been confirmed yet (see Credits).
 
 ### Development
 
@@ -78,57 +79,58 @@ Kotlin · PICO Spatial SDK 6.1.9 · Full Space Stage (`STAGE_FULL`) with one sys
 
 ## 中文
 
-坐在虚拟路口的驾驶位上，路口中心岗台上站着一位 1:1 的交警，他随机转向一个方向，打出 8 种法定交通警察手势中的一种。这个手势是给你这条车道的吗？该走、该停、进待转区、减速慢行、腾空车道，还是靠边停车？PICO OS 6 应用，PICO Spatial SDK 开发。
+坐在虚拟路口的驾驶位上，路口岗台上站着一位 1:1 的交警，他随机转向一个方向，打出 8 种法定交通警察手势中的一种。这个手势是给你这条车道的吗？该走、该停、进待转区、减速慢行、腾空车道，还是靠边停车？PICO OS 6 应用，PICO Spatial SDK 开发。
 
-- **学手势**：9 课。第 0 课先认方位（他的前、后、左、右）；第 1–8 课是 8 种手势（停止、直行、左转弯、左转弯待转、右转弯、变道、减速慢行、示意车辆靠边停车）。交警在你前方 6 米示范，逐节定格，每节配公安部原文；可以换四个角度看、0.5× 慢放、用摇杆转动交警
+- **学手势**：9 课。第 0 课先认方位（他的前、后、左、右）；第 1–8 课是 8 种手势（停止、直行、左转弯、左转弯待转、右转弯、变道、减速慢行、示意车辆靠边停车）。交警在你前方岗台示范，逐节定格，每节配公安部原文；可以换四个角度看、0.5× 慢放、用摇杆转动交警
 - **路口判官**：6 关 69 题：正面四令 · 他的右边是你 · 他的左边是你 · 四面八方 · 换道再看 · 限时判官（5 秒内答）。一开始就全部能玩
 - **判定卡**三步讲清为什么：他朝哪 → 这个手势放谁 → 你在哪条道。答对了，你的车沿着路面上画出的路线开出去
 - **[提示]** 在岗台四周立起「他的前 / 后 / 左 / 右」小牌
 - **错题本**按手势分组，一键再练
-- 设置：语言（中 / 英）、声音、交警大小（真人 / 1.5×）、速度、路口回正、重置进度、退出应用
+- 设置：语言（中 / 英）、声音和音量、交警大小（真人 / 1.5×）、速度、路口回正、重置进度、退出应用
 - 不联网，不需要账号，不申请权限
 
-### 截图（模拟器，中文界面）
+### 截图（v0.1.5，模拟器）
 
 见上方截图表：
 
-1. 学手势：左转弯信号一节一节定格，右边是公安部原文
-2. 主页：学手势、路口判官、错题本，语言、声音、放大 1.5×、慢放都在这
-3. 先认方位：[提示] 在岗台四周立起「他的前 / 后 / 左 / 右」小牌
-4. 判定卡：答对了，三步讲清为什么
-5. 左转待转：答「进待转区」，你的车从斑马线滑进待转框
-6. 错题本：按手势分组记下答错的题，可以一键再练
+1. 开场：交警站在路口左侧岗台上，主窗口在你前方，底下是你自己的车头
+2. 主页：学手势、路口判官、错题本三张卡，底栏切中英、声音、回正
+3. 学手势第 1 课「停止」：交警逐节示范，每节配公安部原文
+4. 路口判官第 1 关 9/10：左边大圆是分数，右边列出答错的题和正确答案
+5. 错题本：答错的题按手势记下，一键再练
+6. 错题练习说明：再答一遍，答对就从错题本删掉
+7. 英文界面答题页、英文设置页
 
-截图来自 PICO 模拟器，状态用调试广播定住拍摄。判定卡（+36°）和课程面板（+30°）在你右手边，正前方的一张截图只拍到它们的一部分；QA 专项截图里每块面板四边圆角都完整。Release 里的演示视频（`TrafficSignals-demo-1080p.mp4`，58 秒）是原生模拟器演示，**由调试输入驱动，非真实手势录像**，无声。
+截图来自 QA 第 6 轮（v0.1.5）的 PICO 模拟器，用 QA 报告里 640 px 的副本合成，比头显里看到的糊一些。QA 演示视频是原生模拟器演示，**由 adb 点按驱动，非真实手势录像**，无声。
 
 ### 安装
 
 ```bash
-adb install -r TrafficSignals-v0.1.1.apk
+adb install -r TrafficSignals-v0.1.5.apk
 pico-cli app launch io.embodit.trafficsignals
 ```
 
-APK 在 [Release v0.1.1](https://github.com/kejing-dev/TrafficSignals/releases/tag/v0.1.1)。需要 PICO OS 6（Spatial SDK 6.1.9，minSdk 35）。
+APK 在 [Release v0.1.5](https://github.com/kejing-dev/TrafficSignals/releases/tag/v0.1.5)。需要 PICO OS 6（Spatial SDK 6.1.9，minSdk 35）。Release 里的 APK 是 `assembleRelease` 未签名包，给商店流水线重签名用；自己侧载要先用自己的 debug key 签名（`apksigner sign --ks ~/.android/debug.keystore …`），或者 `./gradlew assembleDebug` 自己出包。
 
-### 模拟器 QA 通过，真机未验证
+### v0.1.1 之后改了什么
 
-模拟器 QA 第 2 轮三道门禁全过（无 Material 组件；装机、启动、60 秒无崩溃 / ANR；19 个状态中英截图全部核对），第 1 轮 7 条全部复核已修，包括两条阻断（「幽灵车」从你自己的座位出发、糊住视野并穿过面板；英文关卡名被截断）。发布时头显没连，下面这些要戴上头显人工看：
+- **v0.1.2** 一个原生窗口：2D 内容都在一个系统窗口里，用 SpatialUI 原生 TabBar 切主页 / 学手势 / 路口判官 / 错题本 / 设置。交警开场站在路口左侧岗台上，不再落在你身上；换成城市环境光，衬衫和肤色不再发白。
+- **v0.1.3** 第 6 关限时：暂停、离开确认、关窗时手势和 5 秒钟一起停，不露答案；加音量滑条；自己的车换成圆弧车头 + 后视镜，路上配角车换成圆角车身。
+- **v0.1.4** 练到错题清空后 [再来一次] 重练本局；音量滑条加高；错题本 [清空] 先确认；系统最小化和关窗一样停表。
+- **v0.1.5** 结果页、错题本、说明页、确认框、短课重新排版，不再留大片空白；答题页提问句和答案键放大。
 
-1. 眼手捏合、手柄射线 + 扳机点遍 P1–P4 和对话框的所有按钮，尤其 6 个答案键、P2 第二行的 [提示] [再看一遍]、P3 的三个键（模拟器点不到 Stage 面板）。
-2. 幽灵车四条路线（直行 / 右转 / 左转答「走」、答「进待转区」）：脸前和面板前没有绿色车身。右转那辆离你最近（约 5.7 米），从 P3 后方经过，转头看 P3 时注意是否晃眼。
-3. 14 米外交警手势看不看得清：真人大小和 1.5× 各看 8 个手势，四个朝向各一遍（模拟器里交警只有约 20 像素高）。
-4. [提示] 方位立牌在真机景深下分得清前后、不挡交警。
-5. 设置 → 退出应用 → 退出，用手点一遍：应用从最近任务消失，再开是干净的首页。
-6. 低头 30°、抬头 30° 各冷启动一次：P1 竖直、正对你、在视线附近。
-7. P3（+36°）、P4（+30°）转头看是否舒服、按钮点不点得到。
-8. 声音：开着用 3 分钟不吵；静音开关记得住。
+### 验证
+
+- 模拟器 QA 第 6 轮（v0.1.5）门禁全过：无 Material 组件；装机、启动、60 秒无崩溃 / ANR；中英 58 张截图；真实点按主流程走到退出；中英各 68 / 68 个键有响应，无文字溢出日志。
+- 开发者 2026-11-10 在 PICO 头显（Swan）上装了 v0.1.5，看过后放行发布。
 
 ### 已知问题（不挡用）
 
-1. 模拟器上 Stage 建场景期间截不到载入画面（S1），S1 截图沿用 QA 第 1 轮（v0.1.1 没改它）。负载高的模拟器上冷启动到首页要 25–43 秒，真实时长要真机看。
-2. 截图是模拟器默认分辨率 2160 × 2158，不是高清 2560，裁成 16:9。
-3. 部分车道 / 方位的答案超出公安部原文，按「没被放行就等」推断（例如你在他前方时看到直行信号）；判定卡上每题标「原文」或「规则推断」。
-4. 交警模型的许可按开发者 Tripo 账号套餐条款，尚未核对（见致谢）；仓库公开前要先确认。
+1. **英文结果页 5 题以上**：每行限一行，「手势 · 朝向 · 车道 → 正确答案」末尾会被省略号截掉（`Panels.kt` 结果列表，超过 4 行时 `maxLines = 1`）。中文放得下。本版不修。
+2. 少数页面标题和内容之间还有占窗高 20–24% 的空带（结果 1/1、错题本 1 条、答题页、设置页），都在 25% 线以内。
+3. 模拟器上 Stage 建场景期间截不到载入画面（S1）。
+4. 部分车道 / 方位的答案超出公安部原文，按「没被放行就等」推断；判定卡上每题标「原文」或「规则推断」。
+5. 交警模型的许可按开发者 Tripo 账号套餐条款，尚未核对（见致谢）。
 
 ### 开发
 

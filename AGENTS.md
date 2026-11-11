@@ -10,7 +10,7 @@ at a time (P2 / P3 / P4 / DLG of the design became pages of the window). The onl
 (打开面板 / 平视前方). No permissions, no network.
 
 Design package (binding): `../../spatial-app-factory/apps/traffic-signals/design-package.json`. PRD
-https://claude.ai/artifact/WRybtgGkGfQ15wFNfjZ51i, sample https://claude.ai/artifact/C5FFpDzhso2DL7ZYueDQrJ.
+`../../spatial-app-factory/apps/traffic-signals/html/prd.html`, sample `../../spatial-app-factory/apps/traffic-signals/sample.html` (local HTML in the factory repo).
 Scaffold: `pico-cli project create --sdk-type spatial --template stage`, then the panel pool, head tracker, theme,
 fonts and debug receiver ported from Rehearsal Hall (kejing-dev/RehearsalHall), the thumbstick from Figure Model.
 
